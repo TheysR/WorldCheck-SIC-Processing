@@ -4,69 +4,63 @@
 # crime must match and must be convicted for it
 # Parsing Reports Column (H) and writing results in column 15 ()
 # (c) 2022 Theys Radmann
-# ver 1.1 commited 2022-01-10
+# ver 1.2 commited 2022-01-12
 # Notes: TODO refine logic with client
 #######################################################################
 # modules/libararies needed
 from openpyxl import load_workbook, Workbook
 import re  # regex
 # definition of crime categories
+# order of some crimes in list is important for logic and efficiency
+# fisrt crime found and convicted for ends check for further crimes, that's why 
 crimes = [
-    "misappropriation",
-    "embezzlement",
-    "speculation",
-    "larceny",
-    "robbing",
-    "robbed",
-    "robbery",
-    "robberies",
-    "theft",
-    "of theft",
-    "theft of",
-    "theft by",
-    "to theft,",
-    "for theft",
-    "grand theft",
-    "organized crime",
-    "burglary",
+    "stolen",
     "steal",
-    "stealing",
+    "stole public funds",
+    "misappropriat",
+    "Embezzl",
+    "embezzl", 
+    "peculation",
+    "larceny",
+    "to rob",
+    "robbing",
+    "robber",
+    "Robber",
+    "grand theft",
+    "theft",
+    "theft of",
+    # "organized crime",
+    "burglar",
     "pilfering",
     "heist",
-    "shoplifting",
-    "siphoning",
-    "siphoned",
-    "diverting",
-    "diverted",
+    "shoplift",
+    "siphon",
+    "divert", 
     "diversion",
-    "stolen",
-    "illicit enrichment",
-    "malversation",
-    "malversating",
-    "public deposit",
-    "illegally receiving public",
+    # "illicit enrichment",
+    "malversati",
+    # "public deposit",
+    # "illegally receiving public",
     "absorbing public deposits illegally",
     "illegally absorbing of public deposits",
+    "illegally absorbing public deposits",
     "illegal absorption of public deposits",
     "illegally accepting public deposits",
-    "to rob",
     "illegally receiving deposits",
-    "stole public funds",
     "illicit enrichment",
-    "illegal gain",
+    # "illegal gain",
     "funds were obtained illegally",
-    "funds obtained illegally",
-    "financial management irregularities",
+    "funds obtained illegally"
+    # "financial management irregularities",
     "Larceny",
-    "Misappropriation of funds",
-    "Speculation",
-    "Robbery",
-    "Trafficking in Stolen Goods",
-    "Selling stolen goods",
-    "Receipt of stolen goods",
-    "Intellectual Property",
-    "Embezzlement"
+    "larceny"
+    # "Misappropriation of funds", included in misappropation
+    # "Trafficking in Stolen Goods",
+    # "Selling stolen goods",
+    # "Receipt of stolen goods",
+    # "Intellectual Property",
     ]
+words_apart = 12 # maximum distance of words apart from crime and conviction
 # functions
 ############################################################
 def check_conviction(type, str_report, n):
@@ -78,11 +72,11 @@ def check_conviction(type, str_report, n):
 ############################################################
     post_conv = False
     phrase = [
-        "[Cc]onvicted",
-        "[Ss]entenced",
-        "[Pp]leaded guilty",
-        "[Ff]ound guilty",
-        "[Ii]mprisoned"
+        r"[Cc]onvicted",
+        r"[Ss]entence[d]*",
+        r"[Pp]leaded guilty",
+        r"[Ff]ound guilty",
+        r"[Ii]mprisoned"
     ]
     # the following checks are Logic A.
     # However, they are the same as in phrase plus punctuation marks
@@ -126,7 +120,7 @@ def check_conviction(type, str_report, n):
             #_DEBUG print(n, x.group())
             # found. if there are too many words between the type and the conviction phrase, assume review
             i_str = re.split("\s", x.group()) # split into words
-            if len(i_str) > 20:
+            if len(i_str) > words_apart:
                 #_DEBUG print (n, " Too many words between crime and conv")
                 post_conv = None # to flag for review
             else:
@@ -143,7 +137,8 @@ def check_conviction(type, str_report, n):
 # end functions
 
 # start program
-# open workbook    
+# open workbook
+print( 'Loading spreadsheet TE.xlsx...')    
 wb = load_workbook(filename="TE.xlsx")
 ws = wb['Sheet1']
 r = 0
@@ -158,6 +153,7 @@ for row in ws.rows:
     c_AdditionalInfo = ws.cell(row=r,column=7).value
     c_Reports = ws.cell(row=r,column=8).value
     c_status= ws.cell(row=r, column=15).value
+    c_Triage = c_Reports
     # skip non-crime records
     if "CRIME" not in c_categories:
         continue
@@ -171,34 +167,34 @@ for row in ws.rows:
     for x_crime in crimes:
         if x_crime in c_AdditionalInfo:  # see if it is better to use regex instead (in which case we can use them in rcimes list)
             # found crime in rpoert
-            # first, exclude identity theft #########
+            # first, exclude identity theft and theft by deception #########
             if x_crime == "theft":
-                x = re.search("[Ii]dentity theft", c_AdditionalInfo)
+                x = re.search("[Ii]dentity theft", c_Triage)
                 if x:
                     # idenfity theft found. look for another theft not preceded by Identity
-                    y = re.search(r"(?<![Ii]dentity) theft", c_AdditionalInfo)
+                    y = re.search(r"(?<![Ii]dentity) theft", c_Triage)
                     if y == None:
                         # no theft not preceeded by identity was found, i.e. only identity theft was found
                         continue
+                # check for theft by deception
+                x = re.search(r"[Tt]heft by deception", c_Triage)
+                if x:
+                    # see if ther are no other thefts apart form deception
+                    y = re.search(r"[Tt]heft (?!by deception)", c_Triage)
+                    if y == None:
+                        # no theft not followed by 'by deecption' was found, i.e. only theft by deception was found
+                        continue
             if x_crime == "theft of":
                 # exlude theft of identity
-                x = re.search("theft of identity", c_AdditionalInfo)
+                x = re.search("theft of identity", c_Triage)
                 if x:
                     # look for negative
-                    y = re.search(r"theft of (?!identity)", c_AdditionalInfo)
+                    y = re.search(r"theft of (?!identity)", c_Triage)
                     if y == None:
-                        continue # for now
-            if x_crime == "to theft":
-               # exlude theft of identity
-                x = re.search("to theft of identity", c_AdditionalInfo)
-                if x:
-                    # negative
-                    y = re.search(r"to theft (?!of identity)", c_AdditionalInfo)
-                    if y == None:
-                        continue # for now
-            # end exclude identity theft ##########
+                        continue # only theft of identity was found 
+            # end exclude identity theft and theft by deception ##########
             # check conviction for crime
-            chk = check_conviction(x_crime, c_AdditionalInfo, r)
+            chk = check_conviction(x_crime, c_Triage, r)
             if chk == None:
                 # too far away, flag for review (for now)
                 print(r, "SIC Review")
@@ -222,6 +218,8 @@ for row in ws.rows:
     # end loop thtough keywords 
 # end loop through rows
 # write to new workbook
+print('Writing and saving results spreadsheet vacas4.xlsx ...')
 wb.save('vacas4.xlsx')
+print('Done')
 # end python program ######################################################################################################
  
