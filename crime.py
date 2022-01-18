@@ -36,17 +36,17 @@ crimes = [
     r"heist",
     r"shoplift",
     r"siphon",
-    r"(diverted)|(diversion)", 
+    r"(diverted|diversion)", 
     # r"illicit enrichment",
     r"malversati",
     # r"public deposit",
     # r"illegally receiving public",
-    r"absorbing public (deposits)|(funds)",
+    r"absorbing public (deposits|funds)",
     r"illegal absorption of public",
-    r"illegally (receiving)|(acquiring) .*deposits",
-    r"illegally (receiving)|(acquiring) .*public",
-    r"illegally (accepting)|(absorbing) .*public",
-    r"illegally (accepting)|(absorbing) .*deposits",
+    r"illegally (receiving|acquiring) .*deposits",
+    r"illegally (receiving|acquiring) .*public",
+    r"illegally (accepting|absorbing) .*public",
+    r"illegally (accepting|absorbing) .*deposits",
     r"illicit enrichment",
     r"illegally obtain",
     r"illegally receiving pension",
@@ -62,7 +62,10 @@ crimes = [
     # "Receipt of stolen goods",
     # "Intellectual Property",
     ]
-words_apart = 35 # maximum distance of words apart from crime and conviction when matching cirme frst and conviction second
+
+words_apart =20 
+pre_conv = False
+DebugFlg = False
 # functions
 ############################################################
 def check_conviction(type, str_report, n):
@@ -72,17 +75,22 @@ def check_conviction(type, str_report, n):
 # str_report : record (report column) (string)
 # r: row begin processed, for informational purposes only (debugging)
 ############################################################
-    post_conv = False
+    global words_apart, DebugFlg
+    post_conv = 0
     phrase = [
         r"convicted",
         r"sentence[d]*",
         r"pleaded guilty",
         r"found guilty",
+        r"pleaded no contest",
         r"imprisoned",
         r"fined",
         r"arrested .+ serve",
-        r"ordered .*\s*to pay",
+        r"ordered .*\s*to (pay|serve)",
         r"incarcerated",
+        r"amditted guilt",
+        r"served probation",
+        r"to serve .* imprisonment"
     ]
     # keywords must be near crime type if before conv
     # build search string with crime type
@@ -96,21 +104,46 @@ def check_conviction(type, str_report, n):
         p = re.compile(s_str, re.IGNORECASE)
         x = p.search(str_report)
         if x:
-            #_DEBUG print(n, x.group())
-            return True # exit function for any crime found. these are most cases.
-        # if not found, check the other way around
+            if DebugFlg:
+                print(n, x.group())
+            return 1 # exit function for any crime found. these are most cases.
+        # if not found, check the other way around. problem is if there was a conviction for something different, in which
+        # case we should not check for preious mentions of issues
+        # this is difficult. Here some tries just to catch these common ones
+        if "sentenced for" in str_report:
+            continue
+        if "pleaded guilty to" in str_report:
+            continue
+        if "pleaded no contest to" in str_report:
+            continue
+        if "found guilty for" in str_report:
+            continue
+        s_str = "sentence[d]* .*?for "
+        p = re.compile(s_str, re.I)
+        x = p.search(str_report)
+        if x:
+            continue
+        # now the other way around
         s_str = type + '.*? ' + str
         p = re.compile(s_str, re.IGNORECASE)  
         x = p.search(str_report)
         if x:
-            #_DEBUG print(n, x.group())
+            if DebugFlg:
+                print(n, x.group())
             # found. if there are too many words between the type and the conviction phrase, assume review
             i_str = re.split(r"\s", x.group()) # split into words
             if len(i_str) > words_apart:
                 print (n, "Too many words between crime and conv", end="\r")
-                post_conv = None # to flag for review
+                y = p.search(str_report, x.start())
+                if y:
+                    words = re.split("\s", y.group())
+                    if len(words) > words_apart:
+                        print (n, "Too many words between issue and conv", end="\r")
+                        post_conv = -1 # to flag for review
+                else:
+                    return 2
             else:
-                return True
+                return 2
             # end if
         else:
            pass
@@ -124,6 +157,7 @@ def check_issue(issues, str_Triage, r):
 # # returns True (crime found and written in record), False, and None (to review) 
 #
 #####################################################################
+    global pre_conv, DebugFlg
     sic_crime = False
     for x_crime in issues:
         p = re.compile(x_crime, re.I) # to ignore case
@@ -168,7 +202,7 @@ def check_issue(issues, str_Triage, r):
                     # look for negative
                     y = re.search(r"stolen (?!identi)", str_Triage)
                     if y == None:
-                        continue # only stolen identity ewas found, no more soltne, copntien for next phrase
+                        continue # only stolen identity ewas found, no more stolen, continue for next phrase
             if x_crime == "stolen":
                 x = re.search("stolen credit card scheme" , str_Triage)
                 if x:
@@ -193,21 +227,28 @@ def check_issue(issues, str_Triage, r):
             
             # end exclusions
             # check conviction for crime
+            # let]s flag that at least we found the crime
+            pre_conv = True
             chk = check_conviction(x_crime, str_Triage, r)
-            if chk == None:
+            if chk == -1:
                 # too far away, flag for review (for now)
                 print(r, "SIC Review              ", end='\r')
                 sic_crime = None
                 # we do not break as we could find a valid record for another kewword
-            if chk == True:
+            if chk == 1:
                 # write correct to sheet
-                print(r, "SIC Correct             ", end='\r')
-                ws.cell(row=r, column=15, value="SIC CORRECT")
+                print(r, "SIC Correct                    ", end='\r')
+                ws.cell(row=r, column=15, value="CORRECT CONV")
                 return True
-                
+            if chk == 2:
+                print(r, "SIC Correct                    ", end='\r')
+                ws.cell(row=r, column=15, value="CORRECT INF")
+                return True
+            #  if chk is zero, is was not found and we continue
         # end if
     # end for
     return sic_crime
+
 # end functions
 ###################################################
 
@@ -218,8 +259,11 @@ if NumArgs > 1:
     if sys.argv[1] == '--version':
         print('crime version ', ver)
         sys.exit()
+    elif sys.argv[1] == '--debug':
+        DebugFlg = True
+        print("Running in debug mode")
     else:
-        print('Usage: crime [--version]')
+        print('Usage: crime [--version|debug]')
         sys.exit()
 # open workbook
 print( 'Loading spreadsheet TE2 RECORDS done.xlsx...')    
@@ -229,7 +273,7 @@ r = 0
 print("Processing sheet")
 for row in ws.rows:
     r += 1
-    post_conv = False
+    pre_conv = False
     if r == 1:
         continue # skip header (first row)
     # read row into variables (only useful ones)
@@ -253,8 +297,8 @@ for row in ws.rows:
     # Entities are flagged for manual review
     if c_Type == "E":
         # entity, flag for manual review
-        print(r, "Entity: Review manually", end='\r')
-        ws.cell(row=r, column=15, value="REVIEW MANUALLY")
+        print(r, "Entity: Review manually                 ", end='\r')
+        ws.cell(row=r, column=15, value="REVIEW MANUALLY (ENTITY)")
         continue
     # check if in additional lists
     if c_OfficialLists:
@@ -265,12 +309,13 @@ for row in ws.rows:
         for tag in l_list:
             # look for tag in c_AdditionalInfo and extract string
             regex = '\['+tag+'\].*?\['
-            #_DEBUG print (regex)
+            if DebugFlg:
+                print (regex)
             p = re.compile(regex)
             x = p.search(c_AdditionalInfo)
             if x:
                 TagStr.append(x.group())
-                 # we do not need to strip the brackets
+                # we do not need to strip the brackets
                 i += 1
                 Extra = True
             # end if
@@ -296,10 +341,13 @@ for row in ws.rows:
     if sic_crime == True:
         continue # not really necessary but in case more code comes below in loop...
     if sic_crime == False:
-        print(r, "SIC incorrect                    ", end='\r')
-        ws.cell(row=r, column=15, value="SIC INCORRECT")
+        print(r, "SIC incorrect                         ", end='\r')
+        if pre_conv == False:
+            ws.cell(row=r, column=15, value="INCORRECT")
+        else:
+            ws.cell(row=r, column=15, value="NO CONV (REVIEW MANUALLY)")
     if sic_crime == None:
-        print(r, "Review manually                  ", end='\r')
+        print(r, "Review manually                       ", end='\r')
         ws.cell(row=r, column=15, value="REVIEW MANUALLY")
    
     # end loop through rows
