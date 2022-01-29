@@ -11,6 +11,7 @@
 from openpyxl import load_workbook, Workbook
 import re  # regex
 import sys
+import argparse
 # definition of crime categories
 # order of some crimes in list is important for logic and efficiency
 # first crime found and convicted for, ends check for further crimes, that's why
@@ -20,25 +21,25 @@ crimes = [
     r"stolen",
     r"steal",
     r"stole public",
-    r"misappropriat",
-    r"embezzl",
-    r"peculat",
+    r"misappropriat\w+",
+    r"embezzl\w.*",
+    r"peculat\w*",
     r"larceny",
     r"to rob",
     r"robbing",
-    r"robber",
+    r"robber\w*",
     r"grand theft",
     r"theft",
     r"theft of", # must be after theft
     # r"organized crime",
-    r"burglar",
+    r"burglar\w*",
     r"pilfering",
     r"heist",
-    r"shoplift",
-    r"siphon",
+    r"shoplift\w*",
+    r"siphon\w*",
     r"(diverted|diversion)", 
     # r"illicit enrichment",
-    r"malversati",
+    r"malversat\w+",
     # r"public deposit",
     # r"illegally receiving public",
     r"absorbing public (deposits|funds)",
@@ -48,7 +49,7 @@ crimes = [
     r"illegally (accepting|absorbing) .*public",
     r"illegally (accepting|absorbing) .*deposits",
     r"illicit enrichment",
-    r"illegally obtain",
+    r"illegally obtain\w*",
     r"illegally receiving pension",
     r"illegally receiving survivor benefits",
     # r"illegal gain",
@@ -98,7 +99,7 @@ def check_conviction(type, str_report, n):
     for str in phrase:
         # search keyword after conviction. Distance of words are not checked as crime usually follows conviction after a few words
         #  if specified after.
-        s_str = str + ' .*' + type # RegEx word followed by space and anythnig in between and the second word
+        s_str = str + ' .*?' + type # RegEx word followed by space and anythnig in between and the second word
         #_DEBUG print(n, s_str)
         #_DEBUG input("Press return")
         p = re.compile(s_str, re.IGNORECASE)
@@ -121,6 +122,34 @@ def check_conviction(type, str_report, n):
         s_str = "sentence[d]* .*?for "
         p = re.compile(s_str, re.I)
         x = p.search(str_report)
+        if x:
+            continue
+        if "sentenced for" in str_report:
+            continue
+        if "pleaded guilty to" in str_report:
+            continue
+        if "found guilty of" in str_report:
+            continue
+        if "pleaded no contest to" in str_report:
+            continue
+        s_str = "sentence[d]* .*? *for "
+        p = re.compile(s_str, re.I)
+        x = p.search(str_report)
+        if x:
+            continue
+        s_str = "sentence[d]* .*? *on charges of"
+        p= re.compile(s_str, re.I)
+        x= p.search(str_report)
+        if x:
+            continue
+        s_str = "found guilty .*? *on charges of"
+        p= re.compile(s_str, re.I)
+        x= p.search(str_report)
+        if x:
+            continue
+        s_str = 'pleaded guilty .*? *to'
+        p= re.compile(s_str, re.I)
+        x= p.search(str_report)
         if x:
             continue
         # now the other way around
@@ -157,7 +186,7 @@ def check_issue(issues, str_Triage, r):
 # # returns True (crime found and written in record), False, and None (to review) 
 #
 #####################################################################
-    global pre_conv, DebugFlg
+    global pre_conv, DebugFlg, preconv_option
     sic_crime = False
     for x_crime in issues:
         p = re.compile(x_crime, re.I) # to ignore case
@@ -229,6 +258,10 @@ def check_issue(issues, str_Triage, r):
             # check conviction for crime
             # let]s flag that at least we found the crime
             pre_conv = True
+            if preconv_option:
+                print(r, "SIC Correct                    ", end='\r')
+                ws.cell(row=r, column=15, value="CORRECT PRE CONV")
+                return True
             chk = check_conviction(x_crime, str_Triage, r)
             if chk == -1:
                 # too far away, flag for review (for now)
@@ -251,20 +284,18 @@ def check_issue(issues, str_Triage, r):
 
 # end functions
 ###################################################
-
+preconv_option = False
+DebugFlg = False
 # start program
-NumArgs = len(sys.argv)
-if NumArgs > 1:
-    print(NumArgs)
-    if sys.argv[1] == '--version':
-        print('crime version ', ver)
-        sys.exit()
-    elif sys.argv[1] == '--debug':
-        DebugFlg = True
-        print("Running in debug mode")
-    else:
-        print('Usage: crime [--version|debug]')
-        sys.exit()
+parser = argparse.ArgumentParser(description='Process Fraud & Uttering SIC', prog='fraud')
+parser.add_argument("--pc", help="Chcek pre-convition only)", action='store_true')
+parser.add_argument("--version",help="Displays version only", action='version', version='%(prog)s ' + ver)
+parser.add_argument("--debug", help="Debug mode", action='store_true')
+args = parser.parse_args()
+if args.debug:
+    DebugFlg = True
+if args.pc:
+    preconv_option = True
 # open workbook
 print( 'Loading spreadsheet TE2 RECORDS done.xlsx...')    
 wb = load_workbook(filename="TE2 RECORDS done.xlsx")
@@ -288,8 +319,8 @@ for row in ws.rows:
     TagStr = [] # resets list of OifficialLists
     Extra = False
     # skip non-crime records
-    if "CRIME" not in c_categories:
-        continue
+    # if "CRIME" not in c_categories:
+    #     continue
 
     # Note: generalisation: one could filter only for review manaully records (c_status == "REVIEW MANUALLY"). e.g.:
     # if "REVIEW" not in c_status:
@@ -353,8 +384,11 @@ for row in ws.rows:
     # end loop through rows
 # write to new workbook
 
-print('\nWriting and saving results spreadsheet vacas4.xlsx ...')
-wb.save('vacas4.xlsx')
+print('\nWriting and saving results spreadsheet Theft Passed.xlsx ...')
+if preconv_option:
+    wb.save('Theft Preconv Passed.xlsx')
+else:
+    wb.save('Theft Passed.xlsx')
 print('Done')
 # end python program ######################################################################################################
  
