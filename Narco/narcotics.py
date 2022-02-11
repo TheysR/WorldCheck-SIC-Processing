@@ -1,11 +1,11 @@
 #######################################################################
-# parse Excel Worksheet for correct SIC flag
+# parse Excel Worksheet for correct SIC Tag
 # LOGIC FOR NARCOTICS
 # crime must match and must be convicted for it
 # Parsing Reports Column (H) and writing results in column 15 ()
 # (c) 2022 Theys Radmann
-# ver 3.0, new trtiage for complete database
-# run version 2.0 with pre conv only (meant for crt)
+# ver 3.0, new triage for complete database
+# version 4.0 totally new record processing
 #######################################################################
 # modules/libararies needed
 from weakref import WeakSet
@@ -24,77 +24,79 @@ ver = '3.0'
 crimes = [
     r"racketeering and narcotics",
     r"involved in narcotics business",
-    r"(traffick|distribut|import|export|transport|smuggl|production).*?((narcotics?)|(drugs?))",
-    r"((narcotics?)|drug) ((traffick(ing)?)|distribution|import|transport|smuggling|violation|sale)",
-    r"(drug|(narcotics?)) (delivery|distribution|(cultivat(e|ation))|(manufactur(e|ing))|supply)",
-    r"(traffick|distribut|import|export|transport|smuggl|production).*?((drugs?)|(narcotics?))",
+    r"drugs with intent to distribute",
+    r"((narcotics?)|(drug?)) ((traffic(king)?)|distribution|import|transport|smuggling|violations?|sale|traffick)",
+    r"((drugs?)|(narcotics?)) (delivery|(cultivat(e|ation))|(manufactur(e|ing))|(supply(ing)?)|charges|dealing|conspiracy|importation)",
+    r"(drug|narcotics) (production|precursors|cultivation)",
+    r"(narcotics|drugs) for sale",
+    r"((narcotics?)|(drugs?)) ((charge[s]?)|racket|activities|offences?|burglary|convictions|operations|selling)",
+    r"narcotics( .+?)? (charges|(crimes(s)?)|factory|felony|(for sale)|(offence(s)?))",
+    r"((narcotics?)|(drugs?)) (production|precursors|cultivation)",
+    r"(traffic|distribut|import|export|transport|smuggl|production|sell|deliver).*?((drugs?)|(narcotics?)|(controlled( dangerous)? substances?)|heroin)",
+    r"(distribut|cultivat|manufactur|dealing).*?(drugs?|narcotics?|cocaine|mari[jh]uana)",
     r"dealing in (drugs|nacrotics)",
+    r"smuggl.* ((drugs?)|(narcotics?))",
+    r"(sale|(dispens(e|ing))|delivery|distribute) of( a)? (controlled substance|narcotics|drugs)",
+    r"((distribute( a)?)|(dispense a)) controlled substances?"
+    r"(conviction|charges) relat(ed|ing) to( a)? controlled substances?",
     r"(sale|robbery|theft|transfer) of (drugs|narcotics)",
-    r"(selling|(steal(ing)?)|transfer) (drugs|narcotics)",
-    r"posess and distribute (drugs|narcotics)",
+    r"(selling|(steal(ing)?)|transfer) (drugs|narcotics|cocaine|crack|heroin)",
+    r"sell( a)? (narcotics|controlled substances?|cocaine|hashish|heroin|mari[hj]uana)",
+    r"posess and distribute (drugs|narcotics)?",
+    r"posess(ing)? with( the)? intent to (distribute|supply) (drugs|narcotics)?",
+    r"posessing( class a)? narcotics.*?(sales|supply)",
+    r"racketeering involving (drugs|narcotics)",
+    r"ditribut\w+(. +?)? ((drugs?)|narcotics)",
+    r"production of (drugs|nartotics)",
+    r"(drugs|narcotics)(. +?){0,3}? ((manufactur(e|ing))|conspiracy|dealing|supply|trade|trafficking)",
+    r"(drugs|narcotics)(( .+){0,2}?[ -]related)? ((offence[s]?)|(crime[s]?)|(charge[s]?)|activities|convictions?|charges)",
+    r"narcotics-trafficking activities",
     r"theft in nacrotics",
-    r"violating federal narcotics law",
+    r"intent on dealing",
+    r"intent to distribute",
+    r"purpose of trafficking",
+    r"member of a narcotics synicate",
+    r"violating( federal)? narcotics law",
     r"violating( the)? law(s)? of narcotics",
     r"(sale|robbery|theft|transfer) of (drugs|narcotics)",
     r"(selling|(steal(ing)?)|transfer) (drugs|Narcotics)",
     r"posession for the purpose of trafficking",
-    r"narcotics( .+?)? (charges|(crimes(s)?)|factory|felony|(for sale)|(offence(s)?))",
-    r"(drugs?|nartotics?)( .+?){0,3}? ((manufactur(e|ing))|conspiracy|dealing|supply|trade)",
-    r"((drugs?)|(narcotics?))(( .+){0,2}?[ -]related)? ((offence[s]?)|(crime[s]?|)(charge[s]?)|activities)",
+    r"narcotics for the purpose of trafficking",
     r"produc(e|ing)( .+?){0,2}? ((drugs?)|(narcotics?))",
-    r"production of (drugs|narcotics)",
-    r"manufactur(e|ing) of( a)? ((drugs?)|(narcotics?))",
-    r"(narcotic|drug) posession.*?((deal(ing)?)|(sell(ing)?)|sale|(distribut(ion|e|ing))|(traffick(ing?))|(cultivat(ion|e))|(supply(ing)?))",
-    r"posession of (drugs|natotics).*?((deal(ing)?)|sale|(sell(ing)?)|(distribut(ion|e|ing))|(supply(ing?))|traffick(ing)|(cultivat(e|ion)))",
+    r"production of (drugs|narcotics?)",
+    r"manufactur(e|ing)( of)?( a)? ((illicit substances?)|amphetamines)",
+    r"(narcotics?|drugs?) posession.*?((deal(ing)?)|(sell(ing)?)|sale|(distribut(ion|e|ing))|(traffic(king?))|(cultivat(ion|e))|(supply(ing)?))",
+    r"posession of (drugs|narcotics|controlled substances).*?((deal(ing)?)|sale|(sell(ing)?)|(distribut(ion|e|ing))|(supply(ing?))|traffick(ing)|(cultivat(e|ion)))",
+    r"possesion of class a narcotics with intent to supply",
     r"(distribut|sell).*?(drugs|narcotics)",
     r"smuggl(e|ing|ed)( .+?){0,3}? ((drugs?)|(narcotics?))",
+    r"suppl[y|ied|ying] (narcotics|drugs|amphetamine)"
     r"link between narcotic cartels",
     r"narcotics seized",
+    r"seized narcotics",
+    r"seizure of( .+){0,2} (narcotics?|drugs)"
+    r"narcotics [(]hemp[)] trafficking",
     r"seizure of narcotics",
+    r"distribute PCP",
+    r"importing ecstacy",
+    r"mantaining narcotics involved premises",
+    r"(fixed|(import( a)?)) class a narcotics",
+    r"distribution of pseudoephedrine",
     r"unlawful sale and promotion of prescription drugs",
     r"(smuggl|distribut|sell).*?(ketamine)",
+    r"(smuggle|(supply(ing)?)) class [ab]",
     r"aggravated trafficking",
     r"dispensing of control(led)? substance(s)?",
     r"distribution of a listed chemical",
-    r"intent on dealing",
-    r"intent to distribute",
     r"narcotics[ -]trac[k]?fficking",
-    r"((narcotics?)|(drugs?)) ((charge[s]?)|racket|activities)",
-    r"narcotics( .+?)? (charges|(crimes(s)?)|factory|felony|(for sale)|(offence(s)?))",
-    r"((narcotics?)|(drugs?)) (production|precursors|cultivation)",
-    r"relat(ed|ing) to (drugs|Narcotics)",
-    r"smuggl.* ((drugs?)|(narcotics?))",
-    r"smuggl(e|ing|ed)( .+?){0,3}? ((drugs?)|(narcotics?))",
-    r"((drugs?)|(Nartocis?)) ((charge[s]?)|racket|activities)",
-    r"$$ ((charge[s]?)|racket|activities)",
-    r"(traffick|distribut|import|export|transport|smuggl|production).*?$$",
-    r"$$ (traffick|distribution|import|transport|smuggling|violation|sale)",
-    r"(deliver|distribut|cultivat|manufactur|dealing).*?$$",
-    r"$$ (delivery|distribution|cultivation|manufacture|supply)",
-    r"(sell|suppl).*?$$",
-    r"dealing in $$",
-    r"posess and distribute $$",
-    r"(sale|robbery|theft|transfer) of $$",
-    r"(selling|(steal(ing)?)|transfer) $$",
-    r"posess and distribute $$",
-    r"posess(ing)? with( the)? intent to (distribute|supply) $$",
-    r"$$ for sale or supply",
-    r"racketeering involving $$",
-    r"ditribut\w+(. +?)? $$",
-    r"$$ (production|precursors|cultivation)",
-    r"production of $$",
-    r"$$(. +?){0,3}? ((manufactur(e|ing))|conspiracy|dealing|supply|trade)",
-    r"$$(( .+){0,2}?[ -]related)? ((offence[s]?)|(crime[s]?|)(charge[s]?)|activities)",
-    r"produc(e|ing)( .+?){0,2}? $$",
-    r"manufactur(e|ing) of( a)? $$",
-    r"$$ posession.*?((deal(ing)?)|(sell(ing)?)|sale|(distribut(ion|e|ing))|(traffick(ing?))|(cultivat(ion|e))|(supply(ing)?))",
-    r"posession of $$.*?((deal(ing)?)|sale|(sell(ing)?)|(distribut(ion|e|ing))|(supply(ing?))|traffick(ing)|(cultivat(e|ion)))",
-    r"(distribut|sell).*?$$",
-    r"$$ ((charge[s]?)|racket|activities)",
-    r"relat(ed|ing) to $$",
-    r"smuggl.* $$",
-    r"smuggl(e|ing|ed)( .+?){0,3}? $$",
-    ]
+    r"(offences|felony) relat(ed|ing) to (drugs|narcotics|contrtolled substance)",
+    r"conspiracy sale and posession of narcotics",
+    r"(drugs|narcotic) conspiracy",
+    r"running narcotics from",
+    r"racketeering and narcotics",
+    r"controlled substance - sell distribute",
+    r"crimes against life and death"
+]
 # most common drugs
 
 drugs = [
@@ -117,9 +119,11 @@ dismissals = [
     r"dropped",
     r"case filed"
 ]
+combinations = r"with( the)? intent to (deliver|ditribute|manufacture|sell|supply|traffic)"
+    
 
-words_apart = 20 # maximum distance of words apart from crime and conviction when matching cirme frst and conviction second
-pre_conv = False
+words_apart = 30 # maximum distance of words apart from crime and conviction when matching cirme frst and conviction second
+pre_conv_only = False
 DebugFlg = False
 # functions
 ####################################################################
@@ -155,19 +159,22 @@ def check_conviction(c_crime, str_report, n):
 # checks if there was a convitcion for the crime type
 # c_crime : crime (string)
 # str_report : record (report column) (string)
-# r: row begin processed, for informational purposes only (debugging)
-# returns 1 if found and issue follows conviction
-# returns 2 if found and issue is followed by conviction
-# returns -1 if issue is folloed by conviction but too far apart
+# r: row being processed, for informational purposes only (debugging)
+# returns 1 if found and issue follows conviction (correct)
+# returns 2 if found and issue is followed by conviction (correct)
+# returns -1 if issue is folloed by conviction but too far apart (review manually)
+# returns -2 if found but acquittal found as well (review manually)
 # returns 0 is no conviction was found at all
+# nothing gets written
+# called from check_item() with post conv only
 ############################################################
     post_conv = 0
     long_flag = False
-    global words_apart, DebugFlg, preconv_option
+    global words_apart, DebugFlg
     phrase = [
         r"found guilty",
         r"convicted",
-        r"sentence[d]*",
+        r"sentence[d]?",
         r"pleaded guilty",
         r"pleaded no contest",
         r"imprisoned",
@@ -200,7 +207,8 @@ def check_conviction(c_crime, str_report, n):
             words = re.split('\s', x.group())
             if len(words) > words_apart:
                 # crime too far from sentence, look for another sentence further ahead, in case there are two
-                y = RegexSearch(str_report, x.start()+1, n)
+                n_idx = slice(x.start()+1, len(str_report)-1)
+                y = RegexSearch(s_str, str_report[n_idx], n)
                 if y:
                     words = re.split("\s", y.group())
                     if len(words) > words_apart:
@@ -219,7 +227,7 @@ def check_conviction(c_crime, str_report, n):
                     s_acquitt = RegexSearch(s_str, str_report, n)
                     if s_acquitt:
                         print("Acquittal found                                ", end='\r')   
-                        return -2 # although not coreect, is behaves like correct as no further offences are affeced if there is a dismissal
+                        return -2
                         # this may be revised
                 # end for (acquitals)
             # end if (long_flag)
@@ -273,7 +281,8 @@ def check_conviction(c_crime, str_report, n):
 
             if len(words) > words_apart: # too many words in between, but there could be further mention of issue
                 # look for issue further ahead
-                y = RegexSearch(s_str, x.start()+1, n)
+                n_idx = slice(x.start()+1, len(str_report)-1)
+                y = RegexSearch(s_str, str_report[n_idx], n)
                 if y:
                     words = re.split("\s", y.group())
                     if len(words) > words_apart:
@@ -300,47 +309,87 @@ def check_conviction(c_crime, str_report, n):
     # end for (str)
     return post_conv
 #####################################################################
-def check_item(item, str_Triage, r):
+def check_item(item, str_Triage, r, TrType, preconv_only):
 # treturns True, False or None
+# applies SIC logic to apply for one record
+# checks if offence is found. If true, applies logic according to pre or post conv
+# writes to record and returns true to mark end of further item search
+# If False, returns returns false (no writing, as next item could be found)
+# Returns none if offence was found but the match string is very long so
+# it may refer to a different connection
 #####################################################################
-    global pre_conv, preconv_option, DebugFlg, ListCheck, ws, dismissals
-    sic_crime = False
-    s_crime = RegexSearch(item, str_Triage, r)
-    if s_crime:
-        pre_conv = True
-        if len(s_crime.group()) > 100:
-            # should mark as review, as we found a remote connection
-            sic_crime = None
-            return sic_crime
+    global DebugFlg, ListCheck, ws, dismissals
+    sic_tag = False
+    if len(str_Triage) > 500:
+        # mark as too long
+        if preconv_only == False:
+            ws.cell(row=r, column=head.col['Status'], value='REVIEW MANUALLY')
+            ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Entry too long")
+            return True    
+    s_offence = RegexSearch(item, str_Triage, r)
+    if s_offence:
+        if len(s_offence.group()) > 150:
+            # should mark as review, as we found a remote connection. this is very rare
+            # and will happen only with regex that include an open number of characters to match
+            sic_tag = None
+            return sic_tag
+        if preconv_only == True:
+            # we found offense, check dismissal
+            for tag in dismissals:
+                s_str = item + '.*' + tag # we may ommit item in search string
+                s_diss = RegexSearch(s_str, str_Triage, r)
+                if s_diss:
+                    print(r, "Review, dismissal found                                ", end='\r')   
+                    ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+                    ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv: Dismissal found.")
+                    return True # behaves like correct as no further offences are affeced if there is a dismissal
+                # end if
+            # end for
+            # else, no dismissal found
+            print(r, "SIC Correct                             ", end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+            if ListCheck:
+                ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv (List) [: "+TrType+"]")
+            else:
+                ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv ["+TrType+"]")
+            return True
+        # end if
+        # post conv now     
         chk = check_conviction(item, str_Triage, r)
         if chk == -1:
             # too far away, flag for review (for now)
-            sic_crime = None
+            print(r, "SIC Review                            ", end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            if ListCheck:
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Remote connection between conviction and offence ["+TrType+"]. From List")
+            else:
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Remote connection between conviction and offence ["+TrType+"]")
+            return True
         if chk == 1:
             # write correct to sheet
             print(r, "SIC Correct                             ", end='\r')
             ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
             if ListCheck:
-                ws.cell(row=r, column=head.col['Remarks'], value="Conviction after Triage. From List")
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Conviction after offence ["+TrType+"]. From List")
             else:
-                ws.cell(row=r, column=head.col['Remarks'], value="Conviction after Tag")
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Conviction after offence ["+TrType+"]")
             return True
         if chk == 2:
             # write correct to sheet
             print(r, "SIC Correct                             ", end='\r')
             ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
             if ListCheck:
-                ws.cell(row=r, column=head.col['Remarks'], value="Conviction before Triage. From List")
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Conviction before offence ["+TrType+"]. From List")
             else:
-                ws.cell(row=r, column=head.col['Remarks'], value="Conviction before Tag")
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Conviction before pffence ["+TrType+"].")
             return True
         if chk == -2:
             print(r, 'Review manually, acquittal found                            ', end='\r')
             ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
             if ListCheck:
-                ws.cell(row=r, column=head.col['Remarks'], value="Offence tag with conviction but with acquittal. From List")
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: conviction with acquittal ["+TrType+"]. From List")
             else:
-                ws.cell(row=r, column=head.col['Remarks'], value="Offence tag with conviction but with acquittal")
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: conviction with acquittal ["+TrType+"].")
             return True
         if chk == 0:
             # no conviction found, look for dismissals
@@ -350,73 +399,54 @@ def check_item(item, str_Triage, r):
                 if s_diss:
                     print(r, "Review, dismissal found                                ", end='\r')   
                     ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
-                    ws.cell(row=r, column=head.col['Remarks'], value="Dismissal found (no conviction).")
+                    ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Dismissal found ["+TrType+"].")
                     return True # behaves like correct as no further offences are affeced if there is a dismissal
                 # end if
             # end for
             print (r, 'Tag correct - pre conv', end='\r')
-            ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
             if ListCheck:
-                ws.cell(row=r, column=head.col['Remarks'], value="Offence tag found (no conviction). From List")
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: No conviction ["+TrType+"]. From List")
             else:
-                ws.cell(row=r, column=head.col['Remarks'], value="Offence tag found (no conviction).")
+                ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: No conviction ["+TrType+"].")
             return True
     # end if (crime found)
-    return sic_crime
+    return sic_tag
     
 #####################################################################
-def check_issues(issues, str_Triage, r):
+def check_issues(issues, str_Triage, r, preconv):
 # checks if crime was found and convicted
 # # returns True (crime found and written in record), False, and None (to review) 
 # writes record if correct
 #####################################################################
-    global pre_conv, DebugFlg, pws, NoChemCheck
-    sic_crime = False
-
-    for x_crime in issues:
-        if "$$" not in x_crime:
-            sic_crime = check_item(x_crime, str_Triage, r)
-            if sic_crime:
-                break
-        else:
-            # loop for each drug in common list
-            for drug in drugs:
-                # replace $$ with proper drug
-                s_str = x_crime.replace( "$$", drug)
-                sic_crime = check_item(s_str, str_Triage, r)
-                if sic_crime:
-                    break
-            # end for (drug loop
-            if sic_crime:
-                break
-            # not found yet, let's check in chemmicals list then
-            #enforce option not to check for chemicals
-            if NoChemCheck:
-                continue
-            n = 0
-            for ph_row in pws.rows:
-                n += 1
-                chemical = pws.cell(row=n, column=1).value
-                s_str = x_crime.replace( "$$", chemical)
-                if DebugFlg:
-                    print(s_str)
-                    print(r, 'chemical in row', n, chemical)
-                    input('continue >')
-                sic_crime = check_item(s_str, str_Triage, r)
-                if sic_crime:
-                    break
-            # end loop trough drugs in excel list
-            if sic_crime:
-                break
-    # end for (issues loop)
-    return sic_crime
+    global DebugFlg, pws, NoChemCheck
+    sic_tag = False
+   
+    # 1st pass: general
+    for r_crime in issues:
+        sic_tag = check_item(r_crime, str_Triage, r, 'general', preconv)
+        if sic_tag:
+            break
+    if sic_tag:
+        return True
+        
+    # 2nd pass, chemicals
+    if NoChemCheck:
+        return sic_tag
+    n = 0
+    for p_row in pws.rows:
+        n += 1
+        chemical = pws.cell(row=n, column=1).value
+        sic_tag = check_item(chemical, str_Triage, r, 'pharma', preconv)
+        if sic_tag:
+            break
+    return sic_tag
 # end functions
 ###################################################
 
 # start program
 Testflag = False
 DebugFlg = False
-preconv_option = False
 TrueCondition = False
 offence_found = False
 RowLimit = 0
@@ -432,7 +462,7 @@ args = parser.parse_args()
 if args.debug:
     DebugFlg = True
 if args.pc:
-    preconv_option = True
+    preconv_only = True
     print("Pre conviction option")
 if args.nolist:
     NoChemCheck = True
@@ -443,18 +473,12 @@ if args.test:
     print ('Test: processing only', RowLimit, ' rows') 
 org_file = args.filename
 if ".xlsx" not in org_file:
-    if preconv_option:
-        dest_file = org_file + ' Preconv Passed.xlsx'
-    else:
-        dest_file = org_file + ' Passed.xlsx'
+    dest_file = org_file + ' Passed.xlsx'
     WSheet = org_file
     org_file = org_file + '.xlsx'
 else:
     file_parts = org_file.split('.')
-    if preconv_option:
-        dest_file = file_parts[0] + ' Preconv Passed.xlxs'
-    else:
-        dest_file = file_parts[0] + ' Passed.xlxs'
+    dest_file = file_parts[0] + ' Passed.xlxs'
     WSheet = file_parts[0]
 if DebugFlg:
     print('Org: ', org_file)
@@ -474,7 +498,7 @@ head = ExcelHeader(ws)
 if DebugFlg:
  print(head.col)
  input('Enter > ')
- # loaf chemicals list
+ # load chemicals list
 if not NoChemCheck:
     print('Loading chemicals list from file.')
     try:
@@ -487,9 +511,9 @@ if not NoChemCheck:
     pws = pwb['Sheet1']
 r = 0
 print("Processing worksheet")
-for row in ws.rows:
+for g_row in ws.rows:
   
-    pre_conv = False
+    pre_conv_only = False
     r += 1
     if r == 1:
         continue
@@ -504,114 +528,144 @@ for row in ws.rows:
     c_Type = ws.cell(row=r, column=head.col['Type']).value
     c_status= ws.cell(row=r, column=head.col['Status']).value
     c_Triage = c_Reports
-    TagStr = [] # resets list of OifficialLists
-    Extra = False
+    c_lists = [] # resets list of OifficialLists
+    ListsPresent = False
     LongReport = False
     ListCheck = False
+    Combi = False
     
 
     # Entities are flagged for manual review
+    # 1. Entities are flagged for review
     if c_Type == "E":
         # entity, flag for manual review
         print(r, "Entity: Review manually", end='\r')
         ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
-        ws.cell(row=r, column=head.col['Remarks'], value='Entity')
+        ws.cell(row=r, column=head.col['Remarks'], value='ENTITY')
         print(r, "Entity.                                 ", end='\r')
         continue
     if DebugFlg:
         print(r, c_Reports)
         input('Enter > ')
+    
+    
     if not c_Reports:
-        ws.cell(row=r, column=head.col['Status'], value='SIC TAG NOT FOUND')
+        ws.cell(row=r, column=head.col['Status'], value='NO REPORT')
         ws.cell(row=r, column=head.col['Remarks'], value='No report column')
         print(r, "No report found.                         ", end='\r')
         continue
+    # Long reports
     if len(c_Reports) > 800:
         ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
-        ws.cell(row=r, column=head.col['Remarks'], value='Report or list content too long')
+        ws.cell(row=r, column=head.col['Remarks'], value='Report content too long')
         print(r, "Report too long.                         ", end='\r')
         continue
-    # check if in additional lists
+    # 2. check if in additional lists, and populate list content if found
     if c_OfficialLists:
         sic_list = check_list_sic(c_OfficialLists, r)
         if sic_list[0] == True:
             print(r, "Tagged list", end='\r')
             ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
-            ws.cell(row=r, column=head.col['Remarks'], value='Triggered by official List presence' + sic_list[1])
-            continue
-        # extract lists from string
+            ws.cell(row=r, column=head.col['Remarks'], value='OFFICIAL LIST : ' + sic_list[1])
+            continue # no further processing needed
+        # Check if there are brackets for lists in AdditionalInfo and populate set
         # split string
         if DebugFlg:
             print(r, "List found")
         l_list = c_OfficialLists.split(';')
         i=0
         for tag in l_list:
-            # look for tag in c_AdditionalInfo and extract string
-            # for fraud, if HSS is found, tag a CORRECT HSS and no further processing
-            regex = '\['+tag+'\].*?\['
+            # look for tag in c_AdditionalInfo and ListsPresent string
+            regex = r'\['+tag+r'\].*?\['
             #_DEBUG print (regex)
-            p = re.compile(regex)
             x = RegexSearch(regex, c_AdditionalInfo, r)
             if x:
-                TagStr.append(x.group())
+                c_lists.append(x.group())
                  # we do not need to strip the brackets
                 print(r, "List match ", tag, "found            ", end="\r")
                 i += 1
-                Extra = True
+                ListsPresent = True
             # end if
         # end for
     # end if (OfficialLists)
-    # we now have TagInfo populated
-    # len(TagInfo) = mumber of elements (>0) or i , Extra = True as flag, and i as the 
-    # for str in TagInfo:
-    #  we check crimes and convictions there as well at the end of the following loop
-    # check for convvicted crimes in Report
-    print(r, '                                                  ', end='\r')
-    sic_crime = check_issues(crimes, c_Triage, r)
+    # 3. Check for Combinations in report and lists
+    x_comb = RegexSearch(combinations, c_Triage, r)
+    if x_comb: 
+        print(r, "Combination found", end='\r')
+        ws.cell(row=r, column=head.col['Status'], value='REVIEW MANUALLY')
+        ws.cell(row=r, column=head.col['Remarks'], value='COMBINATION')
+        continue
+    # end if
+    # Combinations in lists, we do not check for long reports now.
+    if ListsPresent:
+        for x_Triage in c_lists:
+            x_comb = RegexSearch(combinations, x_Triage, r)
+            if x_comb: 
+                print(r, "Combination found", end='\r')
+                ws.cell(row=r, column=head.col['Status'], value='REVIEW MANUALLY')
+                ws.cell(row=r, column=head.col['Remarks'], value='COMBINATION (LIST)')
+                Combi = True
+                break
+            # end if
+        # end for        
+    # end for
+    # we end further processing if combination was found
+    if Combi:
+        continue            
+    # we now have official lists poulated if matched
+    
+    # 4. Chcek tags for logic. PRe conv or post conv depending on record
+    # flg pre or pos conv
+    if "CRIME" in c_categories:
+        pre_conv_only = False
+    else:
+        pre_conv_only = True
+    # 
+    # we pass Chemicals, and General trhough Reports and lists. 
+    sic_tag = check_issues(crimes, c_Triage, r, pre_conv_only)
     # now we check for Addidional List Tags
-    if sic_crime == True:
+    if sic_tag == True:
         continue # go to next record
     # if not found yet, continue checking in lists if present
-    if Extra:
+    if ListsPresent:
         print(r, "Checking additional in Lists", end="\r")
         LongReport = False
         ListCheck = True
-        for x_Triage in TagStr:
-            if len(x_Triage) > 720:
-                LongReport = True
-                ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
-                ws.cell(row=r, column=head.col['Remarks'], value="List entry too long.")
-                print(r, "Long list enry.                         ", end='\r')
-                continue # check next list tag, if found successfull, the record will be overwritten
-            sic_crime = check_issues(crimes, x_Triage, r)
-            if sic_crime == True:
+        for x_Triage in c_lists:
+            # bwloe is checked in check_item()
+            #if len(x_Triage) > 500:
+            #    LongReport = True
+            #    ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            #    ws.cell(row=r, column=head.col['Remarks'], value="Content of list entry too long.")
+            #    print(r, "Long list enry.                         ", end='\r')
+            #    continue # check next list tag, if found successfull, the record will be overwritten
+            sic_tag = check_issues(crimes, x_Triage, r, pre_conv_only)
+            if sic_tag == True:
                 break
         # end for
         # if long report was detected and no crime found
-        if LongReport:
-            continue
     # end if
-    # if sic_crime was true, it was already written
-    if sic_crime == True:
+    # if sic_tag was true, it was already written
+    if sic_tag == True:
         continue
-    if sic_crime == False:
-        if preconv_option:
+    if sic_tag == False:
+        if LongReport:
+            print (r, "Review manually.                                 ", end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            ws.cell(row=r, column=head.col['Remarks'], value="List Content to long.")
+            continue
+        if pre_conv_only:
             print(r, 'SIC incorrect                                   ', end='\r')
             ws.cell(row=r, column=head.col['Status'], value="TAG SHOULD BE REMOVED")
-            ws.cell(row=r, column=head.col['Remarks'], value="No offence tag found")
+            ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv: No offence found")
             continue
         print(r, "SIC incorrect                              ", end='\r')
-        if pre_conv:
-            ws.cell(row=r, column=head.col['Status'], value="TAG SHOULD BE REMOVED")
-            ws.cell(row=r, column=head.col['Remarks'], value="No offence tag found")
-        else:
-            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
-            ws.cell(row=r, column=head.col['Remarks'], value="Offence found with possible aquittals")
-    if sic_crime == None:
+        ws.cell(row=r, column=head.col['Status'], value="TAG SHOULD BE REMOVED")
+        ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: No offence found")
+    if sic_tag == None:
         print(r, "Review manually. Long text.                            ", end='\r')
         ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
-        ws.cell(row=r, column=head.col['Remarks'], value="Long distance between offence and conviction")
-    
+        ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: relation between crime and conviction not clear")
     # end loop through rows
 # write to new workbook
 print('\nWriting and saving results in file', dest_file, '...' )
