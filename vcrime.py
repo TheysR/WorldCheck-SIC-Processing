@@ -20,38 +20,52 @@ ver = '1.0'
 crimes = [
     r"homicide",
     r"threat",
-    r"intentional injury",
+    r"(intentional|(inflict(ed|ing))) injury",
     r"intimidation",
     r"kidnapping",
     r"manslaughter",
-    r"murder",
-    r"rape",
+    r"assasination",
+    r"assasinated",
+    r"murder(ed)?",
+    r"rape(d)?",
     r"heist",
-    r"aggravated assault",
-    r"assault of a child",
     r"robb(ery|ing)",
-    r"sexual (abuse|assault|harm|violence)",
-    r"(acid|armed|bomb|missile|terror) attack",
-    r"(bombings|blastings)",
+    r"sexual (abuse|harm|violence)",
+    r"((bombing(s)?)|blastings)",
     r"car hijacking",
     r"child (abduction|abuse)",
     r"coercion",
-    r"commit violence",
+    r"commit(ted|ting)? violence",
     r"contract killing",
     r"crimes against life",
     r"criminal intimidation",
-    r"harvesting body parts",
-    r"harvesting of organs",
+    r"harvesting (body parts|(of organs))",
     r"hit[ -]?man activit(y|ies)",
     r"massacre",
     r"reckless endangerment",
     r"sniper",
     r"hooliganism",
     r"violence",
+    r"assault(s)?",
     r"violent (crime|theft|racketeering)",
     r"use of (weappn|explosives)",
-    r"war crimes"
+    r"war crimes",
+    r"attack(s)? (at|in|on|the|against|targeting)",
+    r"attack(ed|ing)?( .+?){0,2}? (citizens|(civilian(s)?)|(( .+?)? residents))",
+    r"attacked military",
+    r"bodily harm",
+    r"bomb plot",
+    r"bombing",
+    r"(acid|armed|(bomb(er)?)|missile|terror|arson) attack(s)?",
+    r"((carry out)|coordinating|ddos|grenade|hotel|(land mine)|(led an)|(masterminded an)) attack(s)?",
+    r"(militant|nayagarh|ordering|(participat(ing|ed) in)|(planning( of)?)|(plot(ting)? (to|an))) attack(s)?,"
+    r"(suicide|civilian|camp|(racially motivated)) attack(s)?",
+    r"terrorist attack",
+    r"(that|reportetly) attacked",
+    r"causing harm",
+    r"harm others"
     ]
+
 words_apart = 20 # maximum distance of words apart from crime and conviction when matching cirme frst and conviction second
 pre_conv = False
 DebugFlg = False
@@ -115,13 +129,10 @@ def check_conviction(type, str_report, n):
                         post_conv = -1 # to flag for review
                         # issue is too far for a conclusive conviction
                         # let's ignore this., but flag for review in case we do not find further evidence (return -1)
-                    else:
-                        return 1
-                long_flag = True
+                        long_flag = True
                 # issue is too far for a conclusive conviction
                 # let's ignore this., but flag for review in case we do not find further evidence (return -1)
-            else:
-                return 1 # exit fucntion for any crime found. these are most cases.
+            return 2 # exit fucntion for any crime found. these are most cases.
         # if not found, check the other way around. problem is if there was a conviction for somthing different, in which
         # case we should not check for preious mentions of issues
         # this is difficult. Here some tries just to catch these common ones
@@ -181,20 +192,18 @@ def check_conviction(type, str_report, n):
                     if len(words) > words_apart:
                         print (n, "Too many words between issue and conv", end="\r")
                         post_conv = -1 # to flag for review
-                else:
-                    if long_flag:
-                        return -1
+                        long_flag = True
                     else:
-                        return 2 # conviction after issue
+                        long_flag = False
+                    # end if
+                # end if
+            # end if (len)
+            if long_flag:
+                return -1
             else:
-                if long_flag:
-                    return -1
-                else:
-                    return 2 
-            # end if
-        else:
-            pass
+                return 1 
         # end if
+        return 1
     # end for
     return post_conv
 # end function ######################################################
@@ -212,6 +221,12 @@ def check_issue(issues, str_Triage, r):
         s_crime = p.search(str_Triage)
         if s_crime:
             # put exlusions here
+            if x_crime == "terrorist attack":
+                s_str = "(killed in|victim of)( .+?){0,3} terrorist attack"
+                p = re.compile(s_str)
+                s_cntr = p.search(str_Triage)
+                if s_cntr:
+                    continue
             # end excluisions ##########
             # check conviction for crime
             pre_conv = True # crime found, no conviction (yet)
