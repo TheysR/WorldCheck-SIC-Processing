@@ -5,6 +5,7 @@
 # Parsing Reports Column (H) and writing results in column 15 ()
 # (c) 2022 Theys Radmann
 # ver 1.0 2022-02-01
+# ver 1.1 2022-02-01 changed to incorporte ExcelHeader as generic header reader
 # run version 2.0 with pre conv only (meant for crt)
 #######################################################################
 # modules/libararies needed
@@ -12,19 +13,18 @@ from openpyxl import load_workbook, Workbook
 import re  # regex
 import sys
 import argparse
-from common import ExcelHeader
-# definition of crime categories
-# order of some crimes in list is important for logic and efficiency
-# first crime found and convicted for, ends check for further crimes, that's why
-# put most frequent ones first 
-ver = '1.0'
+from common import ExcelHeader, RegexSearch
+# definition of offence categories
+# order of some offences in list impacts efficiency
+ver = '1.2'
 Triage = [
-    r"wanted by",
+    r"wanted (by|in)",
     r"abscond(ed)?",
     r"abscond(er|ing)",
     r"at large",
     r"escape(d)?"
     r"fled",
+    r"wanted[.]",
     r"flee(s)?"
     r"fugitive(s)?",
     r"in absentia",
@@ -33,72 +33,99 @@ Triage = [
     r"unkonwn whereabouts",
     r"uzmvd",
     r"vnmps-mw",
-    r"whereabouts unknown",
-    r"placed on( international)? wanted list",
-    r"wanted for"
+    r"whereabouts( remain)? unknown",
+    r"on (.+? ){0,2}?wanted list",
+    r"top wanted list",
+    r"wanted (for|in)"
 
     ]
+# reverse trieage are those words that invalidate a true a&f keyword. it must follow the offence
 ReverseTriage = [
     r"imprisoned",
     r"busted",
     r"captured",
+    r"(re)?arrested",
     r"custody",
     r"detained",
+    r"apprehended",
+    r"surrendered",
     r"electronic monitoring",
     r"electronic surveillance measures",
     r"incarceration",
-    r"no longer (listed|wanted)", 
-    r"surrendered to (authorities|police)", 
+    r"in prison",
+    r"bail granted",
+    r"remanded in custody",
+    r"remanded",
+    r"extradited",
+    r"deported",
+    r"pleaded( not)? guilty",
+    r"granted( .+?){1,2} bail", 
+    r"no longer (listed|wanted)",
+    r"no longer on (an enforcement )?list",
+    r"removed from( .+?){0,3}(wanted|fugitives) list", 
     r"under house arrest",
-    r"under( special)? surveillance"
+    r"under( special)? surveillance",
+    r"sentenced",
+    r"convicted"
 ]
+# we also add triage keywords. These are the list names that appear in AdditionalLists that flag as valid SIC. We read thes from a file
+
 words_apart = 20 # maximum distance of words apart from crime and conviction when matching cirme frst and conviction second
 pre_conv = False
 DebugFlg = False
 # functions
+####################################################################
+def check_list_sic(list_tag, r):
+#  returns true or false for trapping positive sic lists
+####################################################################
+    global lws, TrueList
+    # lists that trigger positive sic tag. could be read from a file 
+    for str_list in TrueList:
+        if str_list in list_tag:
+            return True
+    return False 
+# end check_sic_list()
 #####################################################################
 def check_issue(issues, str_Triage, r):
 # checks if crime was found and convicted
 # # returns True (crime found and written in record), False, and None (to review) 
 # writes record if correct
+# called from main program, once with report, and one or more times with list entry passed in str_Triage
 #####################################################################
     global pre_conv, DebugFlg, ListCheck, ReverseTriage, ReverseTag
     sic_crime = False
     ReverseTag = False
     for x_crime in issues:
-        try:
-            p = re.compile(x_crime, re.I)
-        except:
-            print(r, 'Regex error:', x_crime)
-            print(p.error)
-            sys.exit()
-        s_crime = p.search(str_Triage)
+        s_crime = RegexSearch(x_crime, str_Triage, r)
         if s_crime:
             sic_crime = True
             # issue found, check for reverse triage kword if it follows
             # there is normally only one issue per record
             for kword in ReverseTriage:
-                s_str = x_crime + '.* ' + kword # or use x_crime instead of s_crime.group()
-                try:
-                    q = re.compile(s_str, re.I) # to ignore case
-                except:
-                    print(r, 'Regex error:', s_str)
-                    sys.exit()
-                s_counter = q.search(str_Triage)
+                s_str = x_crime + '.* ' + kword 
+ 
+                s_counter = RegexSearch(s_str, str_Triage, r)
                 if s_counter:
-                    # counter found, exit incorrect
+                # counter found, exit incorrect
                     ReverseTag = True
-                    return False
-            # end for reverse
+                    break
         # end if
-    # end for issue    
-    if sic_crime:    
+    # end for
+    if sic_crime:
+        if ReverseTag:
+            print(r, 'Reivew Manually                             ', end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            ws.cell(row=r, column=head.col['Remarks'], value="REVERSE TAG PRESENT")
+            return True
+        print(r, 'SIC tag correct                             ', end='\r')
         if ListCheck:
-            ws.cell(row=r, column=head.col['Status'], value="SIC CORRECT (LIST)")
+            ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+            ws.cell(row=r, column=head.col['Remarks'], value="From list")
         else:
-            ws.cell(row=r, column=head.col['Status'], value="SIC CORRECT")
+            ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+            ws.cell(row=r, column=head.col['Remarks'], value="From report")
         return True
-    # end if (s_crime true)    
+    # end if sic_crime
     return sic_crime
 # end functions
 ###################################################
@@ -108,7 +135,8 @@ DebugFlg = False
 preconv_option = False
 CheckTag = False
 ReverseTag = False
-parser = argparse.ArgumentParser(description='Process Narcitics` SIC', prog='nacrotics')
+TrueList = []
+parser = argparse.ArgumentParser(description='Process Absconder & Fugitive SIC', prog='absconder')
 parser.add_argument("--version",help="Displays version only", action='version', version='%(prog)s ' + ver)
 parser.add_argument("--debug", help="Debug mode", action='store_true')
 parser.add_argument('filename', help="filename to read")
@@ -139,6 +167,22 @@ except:
     print("cannot open file", org_file)
     sys.exit()
 ws = wb[WorkSheet]
+# load lists that enforce offence (from triage)
+try:
+    lwb = load_workbook(filename='SIC Absconder&Fugitive Logic.xlsx')
+except:
+    print("cannot open file 'SIC Absconder&Fugitive Logic.xlsx'. Maybe it's open?")
+    input('Enter to coninue >')
+    lwb = load_workbook(filename='SIC Absconder&Fugitive Logic.xlsx')    
+lws = lwb['TRIAGE KEYWORDS']
+print('Loading Triage Lists')
+r = 0
+print(lws.rows)
+for lrows in lws.rows:
+    r +=1
+    if r == 1: 
+        continue # skip header
+    TrueList.append(lws.cell(row=r, column=1).value)       
 r = 0
 print("Processing worksheet")
 head = ExcelHeader(ws)
@@ -159,7 +203,8 @@ for row in ws.rows:
     TagStr = [] # resets list of OifficialLists
     Extra = False
     LongReport = False
-    ListCheck = False
+    ListCheck = False # presence of list bracket in additionalinfo
+    ListSic = False # Triage Keywords list found flag
     # if "CRIME" not in c_categories:
     #    continue
 
@@ -170,7 +215,8 @@ for row in ws.rows:
     if c_Type == "E":
         # entity, flag for manual review
         print(r, "Entity: Review manually", end='\r')
-        ws.cell(row=r, column=head.col['Status'], value="ENTITY: REVIEW MANUALLY")
+        ws.cell(row=r, column=head.col['Status'], value="TAG SHOULD BE REMOVED")
+        ws.cell(row=r, column=head.col['Remarks'], value="ENTITY")
         print(r, "Entity.                                 ", end='\r')
         continue
     if DebugFlg:
@@ -180,26 +226,34 @@ for row in ws.rows:
         ws.cell(row=r, column=head.col['Status'], value='NO REPORT')
         print(r, "No report found.                         ", end='\r')
         continue
+    if DebugFlg:
+        print(r, c_Reports)
+        input('Enter > ')
     if len(c_Reports) > 800:
         if not CheckTag:
-            ws.cell(row=r, column=head.col['Status'], value="LONG REPORT: REVIEW MANUALLY")
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            ws.cell(row=r, column=head.col['Remarks'], value="LONG RFEPORT")
             print(r, "Report too long.                         ", end='\r')
             continue
     # check if in additional lists
     if c_OfficialLists:
+        # check for postive trigger lists
+        if (check_list_sic(c_OfficialLists, r)):
+            print(r, "Tagged list", end='\r')
+            ListSic = True
         # extract lists from string
         # split string
         if DebugFlg:
             print(r, "List found")
         l_list = c_OfficialLists.split(';')
+        # store content of official lists tags in AdditionalInfo if there are matches
         i=0
         for tag in l_list:
+            # check if list is part of a positive trigger
             # look for tag in c_AdditionalInfo and extract string
-            # for fraud, if HSS is found, tag a CORRECT HSS and no further processing
             regex = '\['+tag+'\].*?\['
             #_DEBUG print (regex)
-            p = re.compile(regex)
-            x = p.search(c_AdditionalInfo)
+            x = RegexSearch(regex, c_AdditionalInfo, r)
             if x:
                 TagStr.append(x.group())
                  # we do not need to strip the brackets
@@ -208,18 +262,30 @@ for row in ws.rows:
                 Extra = True
             # end if
     #   # end for
-        if DebugFlg:
-            print(TagStr)
     # end if (lists)
-    # we now have TagInfo populated
-    # len(TagInfo) = mumber of elements (>0) or i , Ectra = True as flag, and i as the 
-    # for str in TagInfo:
-    #  we check crimes and convictions there as well at the end ofr the following loop
-    # check for convvicted crimes in Report
+    # we now have everyting polulated
+    # 
+    if ListSic:
+        # positive tag, only need to check for reverse triage
+        for str_rev in ReverseTriage:
+            m_rev = RegexSearch(str_rev, c_Triage, r)
+            if m_rev:
+                print(r, "Reverse triage found", end='\r')
+                break
+        # end for    
+        if m_rev:
+            ws.cell(row=r, column=head.col['Status'], value='REVIEW MANUALLY')
+            ws.cell(row=r, column=head.col['Remarks'], value='OFFICIAL LIST WITH REVERSE')
+        else:
+            ws.cell(row=r, column=head.col['Status'], value='SIC TAG CORRECT')
+            ws.cell(row=r, column=head.col['Remarks'], value='OFFICIAL LIST PRESENT')
+        continue
+    # end if
+    # normal processing
     sic_crime = check_issue(Triage, c_Triage, r)
-    # now we check for Addidional List Tags
     if sic_crime == True:
         continue # go to next record
+    # now we check for Addidional List Tags
     if Extra:
         print("Checking additional in Lists", end="\r")
         LongReport = False
@@ -227,7 +293,8 @@ for row in ws.rows:
         for x_Triage in TagStr:
             if len(x_Triage) > 720 and not CheckTag:
                 LongReport = True
-                ws.cell(row=r, column=head.col['Status'], value="LONG LIST ENTRY: REVIEW")
+                ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+                ws.cell(row=r, column=head.col['Remarks'], value="LONG LIST ENTRY")
                 print(r, "Long list enry.                         ", end='\r')
                 continue
             sic_crime = check_issue(Triage, x_Triage, r)
@@ -240,14 +307,13 @@ for row in ws.rows:
         continue # to next record
     if sic_crime == False:
         print(r, 'SIC incorrect                                   ', end='\r')
-        if ReverseTag:
-            ws.cell(row=r, column=head.col['Status'], value='SIC INCORRECT (REV KWORD)')
-        else:
-            ws.cell(row=r, column=head.col['Status'], value="SIC INCORRECT")
+        ws.cell(row=r, column=head.col['Status'], value="TAG SHOULD BE REMOVED")
+        ws.cell(row=r, column=head.col['Remarks'], value='NO SIC KEYWORD')
         continue
     if sic_crime == None:
         print(r, "Review manually                            ", end='\r')
         ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+        ws.cell(row=r, column=head.col['Remarks'], value="Remote connection between absconder and recapture")
     
     # end loop through rows
 # write to new workbook
@@ -261,4 +327,3 @@ except:
     wb.save(dest_file)
 print('Done')
 # end program ######################################################################################################
- 
