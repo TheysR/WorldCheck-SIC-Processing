@@ -1,13 +1,11 @@
 #######################################################################
 # parse Excel Worksheet for correct SIC flag
-# LOGIC FOR ORGANISED CRIME
+# LOGIC FOR DISQUALIFIED OR DEBARRED
 # crime must match and must be convicted for it
 # (c) 2022 Theys Radmann
-# ver 3.0
+# ver 1.0
 #######################################################################
 # modules/libararies needed
-from weakref import WeakSet
-from mysqlx import Row
 from openpyxl import load_workbook, Workbook
 import re  # regex
 import sys
@@ -17,29 +15,23 @@ from common import ExcelHeader, RegexSearch
 # order of some crimes in list is important for logic and efficiency
 # first crime found and convicted for, ends check for further crimes, that's why
 # put most frequent ones first 
-ver = '3.0'
-# we read crimes from file
-crimes = []
-RevMan = [
-    r"Collaborator of Los",
-    r"conspiracy ring",
-    r"cooperator of los",
-    r"cutting agent conspiracy",
-    r"(distribution|growing|narcotics|smuggling|trafficking) conspiracy",
-    r"growing organisation",
-    r"(member|cooperator) of Los",
-    r"Militia",
-    r"trade network",
-    r"trafficking \(group",
-    r"fixing syndicate",
-    r"production group",
-    r"\(FARC\)",
-    r"\(AUC\)",
-    r" terror(ism)?",
-    r"Revolutionary Armed Forces of Colombia",
-    r" ETA",
-    r"terror related"
-
+ver = '1.0'
+# triage 
+crimes = [
+    r"(banned|barred) from (holding|seeking) public office",
+    r"ban imposed by",
+    r"imposed? a ban",
+    r"imposed a lifetime (trading|director|officer|investor relations) ban",
+    r"prohibited from (acting|trading|holding contracts with the public authority)",
+    r"disqualif(y|ied)",
+    r"debarred",
+    r"barred from (acting|applying|association|operating|participating|serving)",
+    r"barred from any security industry",
+    r"barred from holding executive positions",
+    r"barred from practi[sz]ing law",
+    r"director bar imposed",
+    r"ban imposed by"
+    
 ]
 aquittals = [
     r"ac?quitt(al|ed)",
@@ -55,11 +47,40 @@ dismissals = [
 ]
 
 words_apart = 20 # maximum distance of words apart from crime and conviction when matching cirme frst and conviction second
-max_rep_length = 900 # maximum report length for processing, longer that this will get tagged for review
+max_rep_length = 800 # maximum report length for processing, longer that this will get tagged for review
 pre_conv = False
 DebugFlg = False
 
 # functions
+####################################################################
+def check_list_sic(list_tag, r):
+#  returns true or false for trapping positive sic lists
+####################################################################
+# lists that trigger positive sic tag. could be read from a file
+    TrueLists =[
+        r"ACNV",
+        r"ADB",
+        r"AFCB",
+        r"AFNPA",
+        r"AIIB",
+        r"DISQUALIFIED DIRECTORS",
+        r"INMCA-DD",
+        r"MXSFP",
+        r"NIB",
+        r"PDGS",
+        r"PECG",
+        r"RUFTS-DD",
+        r"UGPPDA",
+        r"USDTC",
+        r"WORLD BANK"
+    ]
+    list_status = [ False, "Null"]
+    for str_list in TrueLists:
+        if str_list in list_tag:
+            list_status = [ True , str_list]
+            return list_status
+    return list_status 
+# end check_sic_list()
 ############################################################
 def check_conviction(type, str_report, n):
 # returning True, False, or None
@@ -220,6 +241,10 @@ def check_item(item, str_Triage, r, pre_conv, src_text):
     sic_tag = False
     s_crime = RegexSearch(item, str_Triage, r)
     if s_crime:
+        # check for weapons of mass destruction
+        if "weapons of mass destruction" in src_text:
+            # invalidates crime found
+            return False
         if pre_conv:
             # check for dismissed
             for tag in dismissals:
@@ -236,7 +261,7 @@ def check_item(item, str_Triage, r, pre_conv, src_text):
             ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
             ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv ["+src_text+"]")
             return True
-        # en if preconv
+        # end if preconv
         # post conv processing
         chk = check_conviction(item, str_Triage, r)
         if chk == -1:
@@ -311,7 +336,7 @@ TrueCondition = False
 offence_found = False
 RowLimit = 0
 sic_tag = False
-parser = argparse.ArgumentParser(description='Process Narcotics SIC', prog='nacrotics.py')
+parser = argparse.ArgumentParser(description='Process Disqualified or Debarred SIC', prog='disqualified.py')
 parser.add_argument("--version",help="Displays version only", action='version', version='%(prog)s ' + ver)
 parser.add_argument("--debug", help="Debug mode", action='store_true')
 parser.add_argument('filename', help="filename to read")
@@ -350,21 +375,7 @@ head = ExcelHeader(ws)
 if DebugFlg:
     print(head.col)
     input('Enter > ')
-
-print('Loading Crimes list from file.')
-try:
-    cwb = load_workbook(filename='OrgCrimes.xlsx')
-except:
-    print('Coud not open file OrgCrimes.xlsx. Is it open?')
-    input('Enter > ')
-    cwb = load_workbook(filename='OrgCrimes.xlsx')
-# load workheet for crimes
-cws = cwb['Sheet1']
-# populate crimes
-r = 1
-for row in cws.rows:
-    crimes.append(cws.cell(row=r, column=1).value)
-    r += 1
+# for each row
 r = 0
 for row in ws.rows:
     pre_conv = False
@@ -378,9 +389,9 @@ for row in ws.rows:
     c_categories = ws.cell(row=r, column=head.col['Categories']).value       
     c_OfficialLists = ws.cell(row=r, column=head.col['OfficialLists']).value    
     c_AdditionalInfo = ws.cell(row=r,column=head.col['AdditionalInfo']).value
-    c_Bio = ws.cell(row=r, column=head.col['Bio']).value    
     c_Reports = ws.cell(row=r,column=head.col['Reports']).value     
     c_Type = ws.cell(row=r, column=head.col['Type']).value
+    # c_Bio = ws.cell(row=r, column=head.col['Bio']).value
     c_status= ws.cell(row=r, column=head.col['Status']).value
     c_Triage = c_Reports
     c_lists = [] # resets list of OifficialLists
@@ -402,33 +413,26 @@ for row in ws.rows:
     if DebugFlg:
         print(r, c_Reports)
         input('Enter > ')
-    if "CRIME - ORGANIZED" in c_categories:
-        ws.cell(row=r, column=head.col['Status'], value='SIC TAG CORRECT')
-        ws.cell(row=r, column=head.col['Remarks'], value='CATEGORY MATCH')
-        print(r, "SIC Correct.                         ", end='\r')
-        continue        
-    if "NONCONVICTION TERROR" in c_categories:
-        ws.cell(row=r, column=head.col['Status'], value='TAG SHOULD BE REMOVED')
-        ws.cell(row=r, column=head.col['Remarks'], value='TERROR CATEGORY')
-        print(r, "SIC Correct.                         ", end='\r')
-        continue        
-    if "CRIME - TERROR" in c_categories:
-        ws.cell(row=r, column=head.col['Status'], value='TAG SHOULD BE REMOVED')
-        ws.cell(row=r, column=head.col['Remarks'], value='TERROR CATEGORY')
-        print(r, "SIC Correct.                         ", end='\r')
-        continue            
     if not c_Reports:
         ws.cell(row=r, column=head.col['Status'], value='NO REPORT')
         ws.cell(row=r, column=head.col['Remarks'], value='No report column')
         print(r, "No report found.                         ", end='\r')
         continue
+    if c_OfficialLists and c_OfficialLists != "NULL":
+        sic_list = check_list_sic(c_OfficialLists, r)
+        if sic_list[0] == True:
+            print(r, "Tagged list", end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+            ws.cell(row=r, column=head.col['Remarks'], value='OFFICIAL LIST : ' + sic_list[1])
+            continue # no further processing needed
+        # Check if there are brackets for lists in AdditionalInfo and populate set
     if len(c_Reports) > max_rep_length:
         ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
         ws.cell(row=r, column=head.col['Remarks'], value='LONG CONTENT')
         print(r, "Report too long.                         ", end='\r')
         continue
     # check if in additional lists
-    if c_OfficialLists:
+    if c_OfficialLists and c_OfficialLists != "NULL":
         if DebugFlg:
             print(r, "List found")
         l_list = c_OfficialLists.split(';')
@@ -447,25 +451,11 @@ for row in ws.rows:
             # end if
         # end for
     # end if (OfficialLists)
-        if DebugFlg:
-            print(c_lists)
+    if DebugFlg:
+        print(c_lists)
     
     # we now have TagInfo populated
-
     # Review keywords
-    for revTag in RevMan:
-        match_rev = RegexSearch(revTag, c_Triage, r)
-        if match_rev:
-            # flag as review
-            ws.cell(row=r, column=head.col['Status'], value='REVIEW MANUALLY')
-            ws.cell(row=r, column=head.col['Remarks'], value='REVIEW KEYWORDS [REP]')
-            print(r, "Review keyword found.                         ", end='\r')
-            sic_tag = True
-            break
-        # end if
-    # end for
-    if sic_tag:
-        continue
         # flag pre/post conv
     if "CRIME" in c_categories:
         pre_conv = False
@@ -474,45 +464,18 @@ for row in ws.rows:
     sic_tag = check_issues(crimes, c_Triage, r, pre_conv, 'RPT')
     if sic_tag == True:
         continue # go to next record
-    # now ehck in Bio
-    c_Triage = c_Bio
-    for revTag in RevMan:
-        match_rev = RegexSearch(revTag, c_Triage, r)
-        if match_rev:
-            # flag as review
-            ws.cell(row=r, column=head.col['Status'], value='REVIEW MANUALLY')
-            ws.cell(row=r, column=head.col['Remarks'], value='REVIEW KEYWORDS [BIO]')
-            print(r, "Review keyword found.                         ", end='\r')
-            sic_tag = True
-            break
-        # end if
-    # end for
-    sic_tag = check_issues(crimes, c_Triage, r, pre_conv, 'BIO')
-    if sic_tag:
-        continue
     # check in lists
     if ListsTrue:
         print("Checking additional in Lists", end="\r")
         ListCheck = True
         for x_Triage in c_lists:
             LongReport = False
-            if len(x_Triage) > 720:
+            if len(x_Triage) > max_rep_length:
                 LongReport = True
                 ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
                 ws.cell(row=r, column=head.col['Remarks'], value="LONG REPORT [LIST]")
                 print(r, "Long list enry.                         ", end='\r')
                 continue # next list entry
-            for revTag in RevMan:
-                match_rev = RegexSearch(revTag, x_Triage, r)
-                if match_rev:
-                    # flag as review
-                    ws.cell(row=r, column=head.col['Status'], value='REVIEW MANUALLY')
-                    ws.cell(row=r, column=head.col['Remarks'], value='REVIEW KEYWORDS [LIST]')
-                    print(r, "Review keyword found.                         ", end='\r')
-                    sic_tag = True
-                    break
-                # end if
-            # end for
             if sic_tag:
                 break # no more list cheks
             sic_tag = check_issues(crimes, x_Triage, r, pre_conv, 'LIST')

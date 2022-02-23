@@ -8,8 +8,6 @@
 # version 4.0 totally new record processing
 #######################################################################
 # modules/libararies needed
-from weakref import WeakSet
-from mysqlx import Row
 from openpyxl import load_workbook, Workbook
 import re  # regex
 import sys
@@ -25,18 +23,18 @@ crimes = [
     r"racketeering and narcotics",
     r"involved in narcotics business",
     r"drugs with intent to distribute",
-    r"((narcotics?)|(drug?)) ((traffic(king)?)|distribution|import|transport|smuggling|violations?|sale|traffick)",
+    r"((narcotics?)|(drugs?)) ((traffic(king)?)|distribution|import|transport|smuggling|violations?|sale|traffick)",
     r"((drugs?)|(narcotics?)) (delivery|(cultivat(e|ation))|(manufactur(e|ing))|(supply(ing)?)|charges|dealing|conspiracy|importation)",
     r"(drug|narcotics) (production|precursors|cultivation)",
     r"(narcotics|drugs) for sale",
-    r"((narcotics?)|(drugs?)) ((charge[s]?)|racket|activities|offences?|burglary|convictions|operations|selling)",
+    r"((narcotics?)|(drugs?)) ((charge[s]?)|racket|activities|offences?|burglary|convictions?|operations?|selling)",
     r"narcotics( .+?)? (charges|(crimes(s)?)|factory|felony|(for sale)|(offence(s)?))",
     r"((narcotics?)|(drugs?)) (production|precursors|cultivation)",
-    r"(traffic|distribut|import|export|transport|smuggl|production|sell|deliver).*?((drugs?)|(narcotics?)|(controlled( dangerous)? substances?)|heroin)",
+    r"(traffic|distribut|import|export|transport|smuggl|production|sell|deliver).*?((drugs?)|(narcotics?)|(controlled( dangerous)? substances?)|heroin|cocaine)",
     r"(distribut|cultivat|manufactur|dealing).*?(drugs?|narcotics?|cocaine|mari[jh]uana)",
     r"dealing in (drugs|nacrotics)",
     r"smuggl.* ((drugs?)|(narcotics?))",
-    r"(sale|(dispens(e|ing))|delivery|distribute) of( a)? (controlled substance|narcotics|drugs)",
+    r"(sale|(dispens(e|ing))|delivery|(distribut(e|ion))) of( a)? (controlled substance|narcotics|drugs)",
     r"((distribute( a)?)|(dispense a)) controlled substances?"
     r"(conviction|charges) relat(ed|ing) to( a)? controlled substances?",
     r"(sale|robbery|theft|transfer) of (drugs|narcotics)",
@@ -112,8 +110,12 @@ drugs = [
 ]
 acquittals = [
     r"a[c]?quitt(al|ed)",
-    r"pardon(ed)?"
+    r"pardon(ed)?",
+    r"dismissed",
+    r"dropped",
+    r"case filed"
 ]
+
 dismissals = [
     r"dismiss(ed|al)",
     r"dropped",
@@ -123,6 +125,7 @@ combinations = r"with( the)? intent to (deliver|ditribute|manufacture|sell|suppl
     
 
 words_apart = 30 # maximum distance of words apart from crime and conviction when matching cirme frst and conviction second
+max_rep_length = 800 # maximum report length for processing, longer that this will get tagged for review
 pre_conv_only = False
 DebugFlg = False
 # functions
@@ -419,7 +422,7 @@ def check_issues(issues, str_Triage, r, preconv):
 # # returns True (crime found and written in record), False, and None (to review) 
 # writes record if correct
 #####################################################################
-    global DebugFlg, pws, NoChemCheck
+    global DebugFlg, cws, NoChemCheck
     sic_tag = False
    
     # 1st pass: general
@@ -434,16 +437,34 @@ def check_issues(issues, str_Triage, r, preconv):
     if NoChemCheck:
         return sic_tag
     n = 0
-    for p_row in pws.rows:
+    for c_row in cws.rows:
         n += 1
-        chemical = pws.cell(row=n, column=1).value
-        sic_tag = check_item(chemical, str_Triage, r, 'pharma', preconv)
+        chemical = cws.cell(row=n, column=1).value
+        sic_tag = check_item(chemical, str_Triage, r, 'chem', preconv)
         if sic_tag:
             break
     return sic_tag
 # end functions
 ###################################################
-
+#####################################################################
+def check_pharma(str_Triage, r):
+# checks if present in pharma list
+# # returns True (found in pharma) or Fale (not found)  
+# writes record if correct
+#####################################################################
+    global DebugFlg, pws, NoChemCheck
+    sic_tag = False
+ 
+    n = 0
+    for p_row in pws.rows:
+        n += 1
+        chemical = pws.cell(row=n, column=1).value
+        s_offence = RegexSearch(chemical, str_Triage, r)
+        if s_offence:
+            return True
+    return sic_tag
+# end functions
+###################################################
 # start program
 Testflag = False
 DebugFlg = False
@@ -502,13 +523,22 @@ if DebugFlg:
 if not NoChemCheck:
     print('Loading chemicals list from file.')
     try:
-        pwb = load_workbook('NarcList.xlsx')
+        cwb = load_workbook('NarcList.xlsx')
     except:
         print('Coud not open file NarcList.xlsx. Is it open?')
         input('Enter > ')
-        pwb = load_workbook('NarcList.xlsx')
+        cwb = load_workbook('NarcList.xlsx')
     # load workheet for pharma
+    cws = cwb['Sheet1']
+    print('Loading Pharma List form file.')
+    try:
+        pwb = load_workbook('PharmList.xlsx')
+    except:
+        print('Coud not open file PharmList.xlsx. Is it open?')
+        input('Enter > ')
+        pwb = load_workbook('NarcList.xlsx')
     pws = pwb['Sheet1']
+
 r = 0
 print("Processing worksheet")
 for g_row in ws.rows:
@@ -526,6 +556,7 @@ for g_row in ws.rows:
     c_AdditionalInfo = ws.cell(row=r,column=head.col['AdditionalInfo']).value    
     c_Reports = ws.cell(row=r,column=head.col['Reports']).value     
     c_Type = ws.cell(row=r, column=head.col['Type']).value
+    # c_Bio = ws.cell(row=r, column=head.col['Bio']).value
     c_status= ws.cell(row=r, column=head.col['Status']).value
     c_Triage = c_Reports
     c_lists = [] # resets list of OifficialLists
@@ -555,7 +586,7 @@ for g_row in ws.rows:
         print(r, "No report found.                         ", end='\r')
         continue
     # Long reports
-    if len(c_Reports) > 800:
+    if len(c_Reports) > max_rep_length:
         ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
         ws.cell(row=r, column=head.col['Remarks'], value='Report content too long')
         print(r, "Report too long.                         ", end='\r')
@@ -613,8 +644,38 @@ for g_row in ws.rows:
     if Combi:
         continue            
     # we now have official lists poulated if matched
-    
-    # 4. Chcek tags for logic. PRe conv or post conv depending on record
+    # ver 3.1 post conv, if narcotics crime catagory, it is correct if no pharma entry was found. This is done before anything else
+    if "CRIME - NARCOTICS" in c_categories:
+        # run through pharma list
+        if check_pharma(c_Triage, r):
+            print(r, "Pharma found in narcotics crime                ", end='\r')
+            ws.cell(row=r, column=head.col['Status'], value='REVIEW MANUALLY')
+            ws.cell(row=r, column=head.col['Remarks'], value='Post Conv: Narcotics Crime Category, pharma found')
+        else:
+            # check in lists if present
+            if ListsPresent:
+                for x_Triage in c_lists:
+                    sic_tag = check_pharma(x_Triage, r)
+                    if sic_tag:
+                        print(r, "Pharma found in narcotics crime", end='\r')
+                        ws.cell(row=r, column=head.col['Status'], value='REVIEW MANUALLY')
+                        ws.cell(row=r, column=head.col['Remarks'], value='Post Conv: Narcotics Crime Category, pharma found (LIST')
+                        break
+                    # end if
+                # end for
+                if not sic_tag:
+                    ws.cell(row=r, column=head.col['Status'], value='SIC TAG CORRECT')
+                    ws.cell(row=r, column=head.col['Remarks'], value='Post Conv: Narcotics Crime Category')
+                # end if
+            else:
+                # no lists present
+                ws.cell(row=r, column=head.col['Status'], value='SIC TAG CORRECT')
+                ws.cell(row=r, column=head.col['Remarks'], value='Post Conv: Narcotics Crime Category')
+            # end if list        
+        # end if check pharma
+        continue        
+    # end if    
+    # 4. Chcek tags for logic. Pre conv or post conv depending on record
     # flg pre or pos conv
     if "CRIME" in c_categories:
         pre_conv_only = False
@@ -622,6 +683,7 @@ for g_row in ws.rows:
         pre_conv_only = True
     # 
     # we pass Chemicals, and General trhough Reports and lists. 
+        
     sic_tag = check_issues(crimes, c_Triage, r, pre_conv_only)
     # now we check for Addidional List Tags
     if sic_tag == True:
