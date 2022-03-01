@@ -336,7 +336,7 @@ TrueCondition = False
 offence_found = False
 RowLimit = 0
 sic_tag = False
-parser = argparse.ArgumentParser(description='Process Arms+Ammo Posession SIC', prog='arms_possession.py')
+parser = argparse.ArgumentParser(description='Process Arms+Ammo Posession SIC', prog=__name__)
 parser.add_argument("--version",help="Displays version only", action='version', version='%(prog)s ' + ver)
 parser.add_argument("--debug", help="Debug mode", action='store_true')
 parser.add_argument('filename', help="filename to read")

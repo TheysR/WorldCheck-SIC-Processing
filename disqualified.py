@@ -1,24 +1,26 @@
 #######################################################################
-# parse Excel Worksheet for correct SIC flag
+# parse Excel Worksheet for correct SIC tag
 # LOGIC FOR DISQUALIFIED OR DEBARRED
-# crime must match and must be convicted for it
 # (c) 2022 Theys Radmann
 # ver 1.0
+# ver 1.1 added triage and changed Entities for tag should be removed
 #######################################################################
 # modules/libararies needed
 from openpyxl import load_workbook, Workbook
 import re  # regex
 import sys
 import argparse
-from common import ExcelHeader, RegexSearch
+from common import ExcelFile, ExcelHeader, RegexSearch
 # definition of crime categories
 # order of some crimes in list is important for logic and efficiency
 # first crime found and convicted for, ends check for further crimes, that's why
-# put most frequent ones first 
-ver = '1.0'
-# triage 
+# most frequent ones should be first 
+ver = '1.1'
+# triage (regular expressions)
 crimes = [
-    r"(banned|barred) from (holding|seeking) public office",
+    r"(banned|barred|prohibited) from (holding|seeking) public (office|employment)",
+    r"banned to hold public office",
+    r"banned from( public)? office",
     r"ban imposed by",
     r"imposed? a ban",
     r"imposed a lifetime (trading|director|officer|investor relations) ban",
@@ -26,12 +28,20 @@ crimes = [
     r"disqualif(y|ied)",
     r"debarred",
     r"barred from (acting|applying|association|operating|participating|serving)",
-    r"barred from any security industry",
+    r"(barred|banned) from( any)? securities industry",
     r"barred from holding executive positions",
     r"barred from practi[sz]ing law",
     r"director bar imposed",
-    r"ban imposed by"
-    
+    r"ban imposed by",
+    r"banned from contracts? with the state",
+    r"banned from dealing in securities",
+    r"disbarred (as|by|from)",
+    r"barred by",
+    r"permanently banned (by|from)",
+    r"barred from penny stock",
+    r"barred from exerci[sz]ing public functions",
+    r"expelled from the cpc",
+    r"prohibited from offering and selling securities"
 ]
 aquittals = [
     r"ac?quitt(al|ed)",
@@ -56,7 +66,7 @@ DebugFlg = False
 def check_list_sic(list_tag, r):
 #  returns true or false for trapping positive sic lists
 ####################################################################
-# lists that trigger positive sic tag. could be read from a file
+# lists that trigger positive sic tag (could be read from a file)
     TrueLists =[
         r"ACNV",
         r"ADB",
@@ -254,12 +264,14 @@ def check_item(item, str_Triage, r, pre_conv, src_text):
                     print(r, "Dismissal found                                ", end='\r')   
                     ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
                     ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv: Dismissal found ["+src_text+"]")
+                    f_obj.review += 1
                     return True
                 # end if
             # end for
             print(r, 'SIC correct                                            ', end='\r')
             ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
             ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv ["+src_text+"]")
+            f_obj.sic_correct += 1
             return True
         # end if preconv
         # post conv processing
@@ -273,17 +285,20 @@ def check_item(item, str_Triage, r, pre_conv, src_text):
             print(r, "SIC Correct                             ", end='\r')
             ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
             ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Conviction after Triage ["+src_text+"]")
+            f_obj.sic_correct += 1
             return True
         if chk == 2:
             # write correct to sheet
             print(r, "SIC Correct                             ", end='\r')
             ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
             ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Conviction before Triage ["+src_text+"]")
+            f_obj.sic_correct += 1
             return True
         if chk == -2:
             print(r, 'Review manually                                ', end='\r')
             ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
             ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: acquittal found ["+src_text+"]")
+            f_obj.review += 1
             return True
         # if no conviction was found, check if there was a dismissal
         if chk == 0:
@@ -294,6 +309,7 @@ def check_item(item, str_Triage, r, pre_conv, src_text):
                     print(r, "Dismissal found                                ", end='\r')   
                     ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
                     ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: No conviction, dismissal found ["+src_text+"]")
+                    f_obj.review += 1
                     return True # behaves like correct as no further offences are affeced if there is a dismissal
                     # this may be revised
                 # end if
@@ -301,6 +317,7 @@ def check_item(item, str_Triage, r, pre_conv, src_text):
             print (r, 'Tag correct - pre conv', end='\r')
             ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
             ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: No conviction ["+src_text+"]")
+            f_obj.review += 1
             return True
 
     # end if (s_crime true)
@@ -336,42 +353,18 @@ TrueCondition = False
 offence_found = False
 RowLimit = 0
 sic_tag = False
-parser = argparse.ArgumentParser(description='Process Disqualified or Debarred SIC', prog='disqualified.py')
-parser.add_argument("--version",help="Displays version only", action='version', version='%(prog)s ' + ver)
-parser.add_argument("--debug", help="Debug mode", action='store_true')
-parser.add_argument('filename', help="filename to read")
-parser.add_argument('-t', '--test', help='run for a limited number of rows', type=int)
-args = parser.parse_args()
-if args.debug:
-    DebugFlg = True
-if args.test:
-    Testflag = True
-    RowLimit = args.test   
-    print ('Test: processing only', RowLimit, ' rows') 
-org_file = args.filename
-if ".xlsx" not in org_file:
-    dest_file = org_file + ' Passed.xlsx'
-    WSheet = org_file
-    org_file = org_file + '.xlsx'
-else:
-    file_parts = org_file.split('.')
-    dest_file = file_parts[0] + ' Passed.xlxs'
-    WSheet = file_parts[0]
-if DebugFlg:
-    print('Org: ', org_file)
-    print('Dest: ', dest_file)
-    input('enter > ')
 
-print( 'Loading spreadsheet', org_file)
-# check if filename exists
-#
-try:     
-    wb = load_workbook(filename=org_file)
-except:
-    print("cannot open file", org_file)
-    sys.exit()
-ws = wb[WSheet]
+f_obj = ExcelFile('disqualified', ver)
+
+if f_obj.debug_flag:
+    DebugFlg = True
+if f_obj.test_flag:
+    RowLimit = f_obj.row_limit
+    Testflag = True
+    
+ws = f_obj.ws
 head = ExcelHeader(ws)
+
 if DebugFlg:
     print(head.col)
     input('Enter > ')
@@ -406,9 +399,11 @@ for row in ws.rows:
     if c_Type == "E":
         # entity, flag for manual review
         print(r, "Entity: Review manually", end='\r')
-        ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+        ws.cell(row=r, column=head.col['Status'], value="TAG SHOULD BE REMOVED")
         ws.cell(row=r, column=head.col['Remarks'], value='ENTITY')
         print(r, "Entity.                                 ", end='\r')
+        f_obj.entities +=1
+        f_obj.sic_incorrect += 1
         continue
     if DebugFlg:
         print(r, c_Reports)
@@ -417,6 +412,7 @@ for row in ws.rows:
         ws.cell(row=r, column=head.col['Status'], value='NO REPORT')
         ws.cell(row=r, column=head.col['Remarks'], value='No report column')
         print(r, "No report found.                         ", end='\r')
+        f_obj.no_report +=1
         continue
     if c_OfficialLists and c_OfficialLists != "NULL":
         sic_list = check_list_sic(c_OfficialLists, r)
@@ -424,12 +420,16 @@ for row in ws.rows:
             print(r, "Tagged list", end='\r')
             ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
             ws.cell(row=r, column=head.col['Remarks'], value='OFFICIAL LIST : ' + sic_list[1])
+            f_obj.off_lists += 1
+            f_obj.sic_correct += 1
             continue # no further processing needed
         # Check if there are brackets for lists in AdditionalInfo and populate set
     if len(c_Reports) > max_rep_length:
         ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
         ws.cell(row=r, column=head.col['Remarks'], value='LONG CONTENT')
         print(r, "Report too long.                         ", end='\r')
+        f_obj.long_entries +=1
+        f_obj.review += 1
         continue
     # check if in additional lists
     if c_OfficialLists and c_OfficialLists != "NULL":
@@ -459,8 +459,10 @@ for row in ws.rows:
         # flag pre/post conv
     if "CRIME" in c_categories:
         pre_conv = False
+        f_obj.preconv +=1
     else:
         pre_conv = True
+        f_obj.postconv +=1
     sic_tag = check_issues(crimes, c_Triage, r, pre_conv, 'RPT')
     if sic_tag == True:
         continue # go to next record
@@ -475,6 +477,8 @@ for row in ws.rows:
                 ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
                 ws.cell(row=r, column=head.col['Remarks'], value="LONG REPORT [LIST]")
                 print(r, "Long list enry.                         ", end='\r')
+                f_obj.long_entries += 1
+                f_obj.review += 1
                 continue # next list entry
             if sic_tag:
                 break # no more list cheks
@@ -491,29 +495,45 @@ for row in ws.rows:
             print (r, "Review manually.                                 ", end='\r')
             ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
             ws.cell(row=r, column=head.col['Remarks'], value="List Content to long.")
+            f_obj.long_entries += 1
+            f_obj.review += 1
             continue
         if pre_conv:
             print(r, 'SIC incorrect                                   ', end='\r')
             ws.cell(row=r, column=head.col['Status'], value="TAG SHOULD BE REMOVED")
             ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv: No offence found")
+            f_obj.sic_incorrect += 1
             continue
         print(r, 'SIC incorrect                                   ', end='\r')
         ws.cell(row=r, column=head.col['Status'], value="TAG SHOULD BE REMOVED")
         ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: No offence found")
+        f_obj.sic_incorrect += 1
     if sic_tag == None:
         print(r, "Review manually                            ", end='\r')
         ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
         ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: relation between crime and conviction not clear")
-    
+        f_obj.review += 1
     # end loop through rows
 # write to new workbook
-print('\nWriting and saving results in file', dest_file, '...' )
+print('\nWriting and saving results in file', f_obj.dest_file, '...' )
 try:
-    wb.save(dest_file)
+    f_obj.ExcelSave()
 except:
     input("\nCannot write to file. Try to close it first and press enter > ")
     print("Saving...")
-    wb.save(dest_file)
+    f_obj.ExcelSave()
 print('Done')
+print('Summary')
+print('=======')
+print('Entities:\t',f_obj.entities)
+print('Long Entries:\t',f_obj.long_entries)
+print('Official Lists:\t', f_obj.off_lists)
+print('No Report:\t',f_obj.no_report)
+print('Pre Conv:\t', f_obj.preconv)
+print('Post Conv:\t',f_obj.postconv)
+print('SIC Correct:\t',f_obj.sic_correct)
+print('SIC Incorrect:\t',f_obj.sic_incorrect)
+print('Man. Review:\t',f_obj.review)
+print('Total:\t\t', r)
 # end program ######################################################################################################
  

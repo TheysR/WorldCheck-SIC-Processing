@@ -3,8 +3,9 @@
 # ExcelHeader: readdsadrs header and assigns column numbers
 #######################################################################
 from sre_compile import isstring
-from openpyxl import Workbook
+from openpyxl import workbook, load_workbook
 import sys, re
+import argparse
 ##########################################################################
 class ExcelHeader:
     """reads header row from excel worksheet and assigns column numbers."""
@@ -118,4 +119,94 @@ def RegexSearch(regex, String, r):
         sys.exit()
     mtch = p.search(String)
     return mtch
-# end function        
+# end function
+#############################################################################################
+class ExcelFile:
+    ''' Opens excel file (workbook and workheet) from arguments '''
+ 
+#############################################################################################
+    def __init__(self, program, ver):
+        parser = argparse.ArgumentParser(description='Run SIC File' , prog=program)
+        parser.add_argument("--pc", help="Chcek pre-conviction only", action='store_true')
+        parser.add_argument("--version",help="Displays version only", action='version', version='%(prog)s ' + ver)
+        parser.add_argument("--debug", help="Debug mode (verbose)", action='store_true')
+        parser.add_argument('filename', help="filename to read")
+        parser.add_argument('-t', '--test', help='run for a limited number of rows', type=int)
+        parser.add_argument('-ws', '--worksheet', help='worksheet name if different from filename', dest='wsheet')
+        args = parser.parse_args()
+        if args.debug:
+            print("Debug mode")
+            self.debug_flag = True
+        else:
+            self.debug_flag = False
+        if args.pc:
+            print("Pre Conv mode")
+            self.preconv_option = True
+        else:
+            self.preconv_option = False
+        org_file = args.filename
+        if args.test:
+            self.test_flag = True
+            self.row_limit = args.test
+            print("Test mode: processing", self.row_limit, "rows")
+        else:
+            self.test_flag = False
+            self.row_limit = 0
+        if ".xlsx" not in org_file:
+            if self.preconv_option:
+                self.dest_file = org_file + ' Preconv Passed.xlsx'
+            else:
+                self.dest_file = org_file + ' Passed.xlsx'
+            WorkSheet = org_file
+            self.org_file = org_file + '.xlsx'
+        else:
+            file_parts = org_file.split('.')
+            if self.debug_flag:
+                print(file_parts)
+            WorkSheet = file_parts[0]
+            if self.preconv_option:
+                self.dest_file = file_parts[0] + ' Preconv Passed.xlxs'
+            else:
+                self.dest_file = file_parts[0] + ' Passed.xlxs'
+            self.org_file = org_file
+        # override worksheet name if specified
+        if args.wsheet:
+            self.worksheet = args.wsheet
+        else:
+            self.worksheet = WorkSheet
+
+        # open workbook
+
+        print( 'Loading spreadsheet ', self.org_file)
+        # check if filename exists
+        #
+        try:     
+            self.wb = load_workbook(filename=self.org_file)
+        except:
+            print("cannot open file ", self.org_file)
+            sys.exit()
+        try:
+            self.ws = self.wb[self.worksheet]
+        except:
+            print("cannot open worksheet ", self.worksheet)
+            sys.exit()
+        self.long_entries = 0
+        self.preconv = 0
+        self.postconv = 0
+        self.entities = 0
+        self.off_lists = 0
+        self.review = 0
+        self.sic_correct = 0
+        self.sic_incorrect = 0
+        self.no_report = 0
+    # end __init__
+#########################################################################################
+    def ExcelSave(self):
+        ''' Save workbook '''
+#########################################################################################
+        try:
+            self.wb.save(self.dest_file)
+        except:
+            input("\nCannot write to file. Try to close it first and press enter > ")
+            print("Saving...")
+            self.wb.save(self.dest_file)
