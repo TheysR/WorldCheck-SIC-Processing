@@ -3,5 +3,7 @@
         "."
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "python.testing.pytestEnabled": true,
+    "workbench.experimental.layoutControl.enabled": true,
+    "terminal.integrated.enableShellIntegration": true
 }
