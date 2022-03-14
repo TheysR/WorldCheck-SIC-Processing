@@ -1,9 +1,9 @@
 #######################################################################
 # parse Excel Worksheet for correct SIC tag
-# LOGIC FOR DISQUALIFIED OR DEBARRED
+# LOGIC FOR CONGTROL AND REGULATION
 # (c) 2022 Theys Radmann
 # ver 1.0
-# ver 1.1 added triage and changed Entities for tag should be removed
+# 
 #######################################################################
 # modules/libararies needed
 from openpyxl import load_workbook, Workbook
@@ -18,30 +18,95 @@ from common import ExcelFile, ExcelHeader, RegexSearch
 ver = '1.1'
 # triage (regular expressions)
 crimes = [
-    r"(banned|barred|prohibited) from (holding|seeking) public (office|employment)",
-    r"banned to hold public office",
-    r"banned from( public)? office",
-    r"ban imposed by",
-    r"imposed? a ban",
-    r"imposed a lifetime (trading|director|officer|investor relations) ban",
-    r"prohibited from (acting|trading|holding contracts with the public authority)",
-    r"disqualif(y|ied)",
-    r"debarred",
-    r"barred from (acting|applying|association|operating|participating|serving)",
-    r"(barred|banned) from( any)? securities industry",
-    r"barred from holding executive positions",
-    r"barred from practi[sz]ing law",
-    r"director bar imposed",
-    r"ban imposed by",
-    r"banned from contracts? with the state",
-    r"banned from dealing in securities",
-    r"disbarred (as|by|from)",
-    r"barred by",
-    r"permanently banned (by|from)",
-    r"barred from penny stock",
-    r"barred from exerci[sz]ing public functions",
-    r"expelled from the cpc",
-    r"prohibited from offering and selling securities"
+    r"anti-?trust violations?",
+    r"banking regulation violations?",
+    r"breach of AML regulations?",
+    r"breach of market violation law",
+    r"serious disciplinary and law violations",
+    r"(infringment of|contravening) ((antimafia|building|civil service))? regulations?",
+    r"contravening parallel( and direct) import regulations?",
+    r"contravening the (clean air|exchange control) regulations?"
+    r"failing to comply with",
+    r"highway traffic act violations",
+    r"infraction of environmental laws and regulations",
+    r"(infraction|infringment) of( the)?( central)? bank regulations?",
+    r"law violations",
+    r"infrignments of securities legislation and regulations",
+    r"non-compliance with regulations",
+    r"regulation violation",
+    r"voilated the (banking act|local tax law)",
+    r"violated the public office election (act|law)",
+    r"violated the Unfair Competition Prevention Act",
+    r"violated Unauthorised Computer Access Law",
+    r"violating( the)? ((copyright( infringment)?)|immigration|intellectual property) (laws?|act)",
+    r"violation of the phillipine intellectual property code",
+    r"violating environmental protection regulations",
+    r"violating insurance laws",
+    r"violating regulations on bidding",
+    r"(violating|violation of) the (banking|civil service|clean air|dodd-frank|foreign business|securities( and excange)?|wildlife) Act",
+    r"(violation of|violating) the (truth in lending|argicultural finance) act"
+    r"violating the( colorado)? organi[sz]ed crime control act",
+    r"violating the( indiana)? securities act",
+    r"(violating|violation of) the (anti-smuglging|public office election) law",
+    r"violating( new york)? sate banking law",
+    r"violating the law on financing of terrorism",
+    r"violating the Racketeer Influenced and Corrupt Organi[sz]ations Act",
+    r"violations? against market law",
+    r"violations? of (anti moneylaundering|anti-graft practices) act",
+    r"violations? of( the)? copyrights? (act|law)",
+    r"violations? of the duty",
+    r"violations? of the( prevention of)? money laundering( control)? act"
+    r"violations? of (loterry regulation|political funds|the drug|the martin|anti-corruption|antimonopoly|clean water) act",
+    r"violations? of the (investment|customs?|banking|air pollution|futures trading|forest|financial instrument and exchange) act",
+    r"violations? of the (trademark|(wildlife( protection?))|trade secrets|marketing|moneylenders|mineral resources|national forestry) act",
+    r"violations? of the (organized crime prevention|securities and exchange|waste disposal) act",
+    r"violations? of the (sexual offences against children|wildlife resources conservation and protection) act",
+    r"violations? of the (employmnent service|telecommunucations|trade secrets|organi[zs]ed crime prevention) act",
+    r"violations? of the (Public Procurement and Disposal|street crime and terrorism prevention) act,"
+    r"violations? of the export administration ragulations",
+    r"violations? of Financial Investment Services and Capital Market Act",
+    r"violations? of the food and drugs?( administration)? act",
+    r"violations? of the Code of Professional Responsibility",
+    r"violations? of the anti-trafficking",
+    r"violations? of the Anti-Graft and Corrupt Practices Act",
+    r"violations? of the Government Procurement Act",
+    r"violations? of the Revised Philippine Forestry Code",
+    r"violations? of the( local tax)? law",
+    r"violations? of (securities|electoral|anti-narcotics|illegal immigration|against market|consumer) law",
+    r"violations? of the competition protection law",
+    r"violations? of the Export Administration Regulations?",
+    r"(infringment|violations?) of( significant|the)? industrial (property|protection) (rights|laws)",
+    r"(breach|violations?) of the consumer (loan|protection) act",
+    r"violations? of( the)? law",
+    r"customs violation",
+    r"violations? of Prohibition of Fraudulent and Unfair Trade Practices Regulations",
+    r"violations? of regulations of firearms",
+    r"violations? of information disclosure regulations?",
+    r"(infraction|violations?) of environmental laws?",
+    r"violations? of Securities( and) Exchange Act",
+    r"violations? of( the) intellectual propetry code",
+    r"violation of human trafficking",
+    r"violation of banking regulations?",
+    r"violations? of the Offences and Penalties Regulation",
+    r"violations under the Foreign Exchange Management Act",
+    r"violation of professional secrecy",
+    r"violations? of the Act Governing Food",
+    r"violations? of the Act on Specified Commercial Transactions",
+    r"offences in accordance to the Law No 29622 and its regulations",
+    r"breaches of the Act relating to supervision deficiencies",
+    r"violation of Prohibition of Fraudulent and Unfair Trade Practices",
+    r"(infringing|violations? of) the competition act",
+    r"lack of organisation and internal control",
+    r"(violating|violation(s) of)( bank)? lending regulations",
+    r"violating regulations on( exploitation and)? protection of (forests|endangered and rare animals)",
+    r"violation of the regulations governing environmental protection",
+    r"violating( state)? regulations on economic management",
+    r"violating regulations on research, exploration and exploitation of natural resources",
+    r"breaching( Alberta's)? fish and wildlife regulations",
+    r"violating regulations on management and use of state assets",
+    r"contravening the Marine Living Resources Act",
+    r"serious infringement of rules and regulations",
+
 ]
 aquittals = [
     r"ac?quitt(al|ed)",
@@ -67,23 +132,8 @@ def check_list_sic(list_tag, r):
 #  returns true or false for trapping positive sic lists
 ####################################################################
 # lists that trigger positive sic tag (could be read from a file)
-    TrueLists =[
-        r"ACNV",
-        r"ADB",
-        r"AFCB",
-        r"AFNPA",
-        r"AIIB",
-        r"DISQUALIFIED DIRECTORS",
-        r"INMCA-DD",
-        r"MXSFP",
-        r"NIB",
-        r"PDGS",
-        r"PECG",
-        r"RUFTS-DD",
-        r"UGPPDA",
-        r"USDTC",
-        r"WORLD BANK"
-    ]
+# not used in this program
+    TrueLists =[]
     list_status = [ False, "Null"]
     for str_list in TrueLists:
         if str_list in list_tag:
@@ -345,8 +395,12 @@ def check_issues(issues, str_Triage, r, preconv, Source):
     return sic_tag
 # end functions
 ###################################################
-
+# Main
 # start program
+# here two files are read, one with official lists and on without.
+# no officiallists, read from reports
+# with officialist, read additional info
+# the option wil be given by argument to program
 Testflag = False
 DebugFlg = False
 TrueCondition = False
@@ -354,14 +408,17 @@ offence_found = False
 row_limit = 0
 sic_tag = False
 
-xls = ExcelFile('disqualified', ver)
+xls = ExcelFile('control_regulations', ver)
 
 if xls.debug_flag:
     DebugFlg = True
 if xls.test_flag:
     row_limit = xls.row_limit
     Testflag = True
-    
+if xls.nolist:
+    no_list = True
+else:
+    no_list = False    
 ws = xls.ws
 head = ExcelHeader(ws)
 
@@ -386,87 +443,87 @@ for row in ws.rows:
     c_Type = ws.cell(row=r, column=head.col['Type']).value
     # c_Bio = ws.cell(row=r, column=head.col['Bio']).value
     c_status= ws.cell(row=r, column=head.col['Status']).value
-    c_Triage = c_Reports
+    # accorging to this sic, option no list reads from reports, otherwise from additionalinfo
+    if no_list:
+        c_Triage = c_Reports
+        c_source = "RPT"
+    else:
+        c_Triage = c_AdditionalInfo
+        c_source = "LST"
     c_lists = [] # resets list of OifficialLists
     ListsTrue = False
     LongReport = False
     ListCheck = False
     sic_tag = False
     if head.missing_col == 'Type':
-        c_Type = "N"
-    
+        # classify according to caterogy
+        match c_categories:
+            case "VESSEL" | "EMBARGO VESSEL" | "CORPORATE" | "ORGANISATION" | "POLITICAL PARTY" | "TRADE UNION" | "PORT" | "BANK":
+                c_Type = "E"
+            case _: 
+                c_Type = "I"
     # Entities are flagged for manual review
     if c_Type == "E":
         # entity, flag for manual review
         print(r, "Entity: Review manually", end='\r')
-        ws.cell(row=r, column=head.col['Status'], value="TAG SHOULD BE REMOVED")
+        ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
         ws.cell(row=r, column=head.col['Remarks'], value='ENTITY')
         print(r, "Entity.                                 ", end='\r')
         xls.entities +=1
-        xls.sic_incorrect += 1
+        xls.review += 1
         continue
     if DebugFlg:
         print(r, c_Reports)
         input('Enter > ')
-    if not c_Reports:
+    if not c_Reports and no_list == False:
         ws.cell(row=r, column=head.col['Status'], value='NO REPORT')
         ws.cell(row=r, column=head.col['Remarks'], value='No report column')
         print(r, "No report found.                         ", end='\r')
         xls.no_report +=1
         continue
-    if c_OfficialLists and c_OfficialLists != "NULL":
-        sic_list = check_list_sic(c_OfficialLists, r)
-        if sic_list[0] == True:
-            print(r, "Tagged list", end='\r')
-            ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
-            ws.cell(row=r, column=head.col['Remarks'], value='OFFICIAL LIST : ' + sic_list[1])
-            xls.off_lists += 1
-            xls.sic_correct += 1
-            continue # no further processing needed
-        # Check if there are brackets for lists in AdditionalInfo and populate set
-    if len(c_Reports) > max_rep_length:
-        ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
-        ws.cell(row=r, column=head.col['Remarks'], value='LONG CONTENT')
-        print(r, "Report too long.                         ", end='\r')
-        xls.long_entries +=1
-        xls.review += 1
-        continue
-    # check if in additional lists
-    if c_OfficialLists and c_OfficialLists != "NULL":
-        if DebugFlg:
-            print(r, "List found")
-        l_list = c_OfficialLists.split(';')
-        i=0
-        for tag in l_list:
-            # look for tag in c_AdditionalInfo and extract string
-            regex = '\['+tag+'\].*?\['
-            #_DEBUG print (regex)
-            x = RegexSearch(regex, c_AdditionalInfo, r)
-            if x:
-                c_lists.append(x.group())
-                 # we do not need to strip the brackets
-                print(r, "List match ", tag, "found            ", end="\r")
-                i += 1
-                ListsTrue = True
-            # end if
-        # end for
-    # end if (OfficialLists)
-    if DebugFlg:
-        print(c_lists)
+    if no_list == False:
+        if len(c_Reports) > max_rep_length:
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            ws.cell(row=r, column=head.col['Remarks'], value='LONG CONTENT')
+            print(r, "Report too long.                         ", end='\r')
+            xls.long_entries +=1
+            xls.review += 1
+            continue
+#    if c_OfficialLists and c_OfficialLists != "NULL":
+#        if DebugFlg:
+#            print(r, "List found")
+#        l_list = c_OfficialLists.split(';')
+#        i=0
+#        for tag in l_list:
+#            # look for tag in c_AdditionalInfo and extract string
+#            regex = '\['+tag+'\].*?\['
+#            #_DEBUG print (regex)
+#            x = RegexSearch(regex, c_AdditionalInfo, r)
+#            if x:
+#                c_lists.append(x.group())
+#                 # we do not need to strip the brackets
+#                print(r, "List match ", tag, "found            ", end="\r")
+#                i += 1
+#                ListsTrue = True
+#            # end if
+#        # end for
+#    # end if (OfficialLists)
+ #   if DebugFlg:
+ #       print(c_lists)
     
     # we now have TagInfo populated
     # Review keywords
-        # flag pre/post conv
+    # flag pre/post conv
     if "CRIME" in c_categories:
         pre_conv = False
         xls.postconv +=1
     else:
         pre_conv = True
         xls.preconv +=1
-    sic_tag = check_issues(crimes, c_Triage, r, pre_conv, 'RPT')
+    sic_tag = check_issues(crimes, c_Triage, r, pre_conv, c_source)
     if sic_tag == True:
         continue # go to next record
-    # check in lists
+    # check in lists, never executed in control+regulations
     if ListsTrue:
         print("Checking additional in Lists", end="\r")
         ListCheck = True
@@ -494,7 +551,7 @@ for row in ws.rows:
         if LongReport:
             print (r, "Review manually.                                 ", end='\r')
             ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
-            ws.cell(row=r, column=head.col['Remarks'], value="List Content to long.")
+            ws.cell(row=r, column=head.col['Remarks'], value="Content to long.")
             xls.long_entries += 1
             xls.review += 1
             continue

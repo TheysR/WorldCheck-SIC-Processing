@@ -12,10 +12,12 @@ class ExcelHeader:
 # called with ws (worksheet class)
 # Init: assigns column numbers to the headers of a SIC file, using
 # label as index. Adds Remarks label in first row at the end.
-# properties:
+# Properties:
 # col (type dict): col['Header_Name'] containes column number
 # last_col: contains last valid column
 # values are assigned at initialisation
+# Methods:
+# AddColumn(): adds a column header with specified name
 # ver 1.0 : read headers and add status and remarks if not found
 # ver 1.1 : added last_column property
 # ver 1.2 : added Addcolumn method (not tested)
@@ -76,6 +78,9 @@ class ExcelHeader:
         self.col['Remarks'] = c
         c += 1
         ws.cell(row=1, column=self.col['Remarks'], value = 'REMARKS')
+        if self.col['OfficialLists'] == 0:
+            # we need to assing a value to column otherwise caller will fail. This will happen in control+regulations nolist    
+            self.col['OfficialLists'] = 100
         # if 'Type' column does not exist, we create element as next column so col references do not raise errors.
         # 'Type' is not mandatory for processing
         if self.col['Type'] == 0:
@@ -87,11 +92,10 @@ class ExcelHeader:
             self.missing_col = ''
         self.last_column = c
     # end _init
-##################################################################################################
+    
     def AddColumn(self, ws, label):
         ''' Adds a user defined column to the open worksheet '''
         # not tested
-##################################################################################################
         if not isstring(label):
             print ('AddColumn(): wrong type label :', label, 'argument must be a string')
             sys. exit() # fatal error
@@ -106,25 +110,30 @@ class ExcelHeader:
         return self.last_column
         
 # end class ExcelHeader
-############################################################################################
-def RegexSearch(regex, String, r):
-    """"Search for string in text using regex."""
-# helper function to search for regular expression to catch error
-# and use case ignore flag
-#############################################################################################
-    try:
-        p = re.compile(regex, re.IGNORECASE)
-    except:
-        print(r, 'Wrong regex:', regex)
-        sys.exit()
-    mtch = p.search(String)
-    return mtch
-# end function
 #############################################################################################
 class ExcelFile:
-    ''' Opens excel file (workbook and workheet) from arguments '''
- 
-#############################################################################################
+    ''' Opens excel file (workbook and workheet) from command line arguments
+        params: program name and version
+        Rules for filenames and worksheets (from command lines arguments):
+        - filename is org_File.xlsx. Argument can be specifided with or without .xlsx ending
+        - Destination file is 'org_file Passed.xlsx'
+        - Worksheet name is same as filename (without .xlsx), unless specified by -ws argument
+        It is up to the calling program to honour the flags (pc, debug, test)  
+    '''
+#   Methods:
+#   ExcelSave(): saves new workbook with assigned filename at __init__
+#   Propetries:
+#   org_file : file ro read
+#   dest_file : file wo write (destination file)
+#   worksheet : worksheet name
+#   wb : open workbook object
+#   ws : open worksheet object
+#   debug_flag, preconv_option, test_flag : boolean flags for verbose, precon processing only
+#       and testing
+#   row_limit : max number of rows to process with test flag
+#   several properties for statistics (at end of __init__). It is up to the calling program to
+#   increment the aprropriate values
+
     def __init__(self, program, ver):
         parser = argparse.ArgumentParser(description='Run SIC File' , prog=program)
         parser.add_argument("--pc", help="Chcek pre-conviction only", action='store_true')
@@ -133,6 +142,7 @@ class ExcelFile:
         parser.add_argument('filename', help="filename to read")
         parser.add_argument('-t', '--test', help='run for a limited number of rows', type=int)
         parser.add_argument('-ws', '--worksheet', help='worksheet name if different from filename', dest='wsheet')
+        parser.add_argument('--nolist', help='option without official lists', action='store_true')
         args = parser.parse_args()
         if args.debug:
             print("Debug mode")
@@ -152,18 +162,21 @@ class ExcelFile:
         else:
             self.test_flag = False
             self.row_limit = 0
+        self.nolist = False
+        if args.nolist:
+            self.nolist = True
         if ".xlsx" not in org_file:
             if self.preconv_option:
                 self.dest_file = org_file + ' Preconv Passed.xlsx'
             else:
                 self.dest_file = org_file + ' Passed.xlsx'
-            WorkSheet = org_file
+            ws_name = org_file
             self.org_file = org_file + '.xlsx'
         else:
             file_parts = org_file.split('.')
             if self.debug_flag:
                 print(file_parts)
-            WorkSheet = file_parts[0]
+            ws_name = file_parts[0]
             if self.preconv_option:
                 self.dest_file = file_parts[0] + ' Preconv Passed.xlxs'
             else:
@@ -173,7 +186,7 @@ class ExcelFile:
         if args.wsheet:
             self.worksheet = args.wsheet
         else:
-            self.worksheet = WorkSheet
+            self.worksheet = ws_name
 
         # open workbook
 
@@ -200,13 +213,27 @@ class ExcelFile:
         self.sic_incorrect = 0
         self.no_report = 0
     # end __init__
-#########################################################################################
+
     def ExcelSave(self):
         ''' Save workbook '''
-#########################################################################################
         try:
             self.wb.save(self.dest_file)
         except:
             input("\nCannot write to file. Try to close it first and press enter > ")
             print("Saving...")
             self.wb.save(self.dest_file)
+# end class ExcelFile
+############################################################################################
+def RegexSearch(regex, String, r):
+    """"Search for string in text using regex."""
+# helper function to search for regular expression to catch error
+# and use case ignore flag
+#############################################################################################
+    try:
+        p = re.compile(regex, re.IGNORECASE)
+    except:
+        print(r, 'Wrong regex:', regex)
+        sys.exit()
+    mtch = p.search(String)
+    return mtch
+# end function
