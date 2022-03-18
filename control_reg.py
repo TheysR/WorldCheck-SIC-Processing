@@ -4,6 +4,8 @@
 # (c) 2022 Theys Radmann
 # ver 1.0
 # ver 2.0 : Entities is prcvessed, added Financial Services Warnings positive
+# This program introduces statistics and logging, and should be used as template 
+# for futures SIC programs. Uncomment sections as necessary
 #######################################################################
 # modules/libararies needed
 from openpyxl import load_workbook, Workbook
@@ -11,12 +13,18 @@ import re  # regex
 import sys
 import argparse
 from common import ExcelFile, ExcelHeader, RegexSearch, Logger
-# definition of crime categories
+
+# definition of offense categories
+# version
+ver = '2.1'
+# log file name and program name
+logfile = 'control_reg'
+program_name = 'control_regulations'
+
+# offense triage (regular expressions). 
 # order of some crimes in list is important for logic and efficiency
-# first crime found and convicted for, ends check for further crimes, that's why
-# most frequent ones should be first 
-ver = '2.0'
-# triage (regular expressions)
+# First crime found and convicted for, ends checks for further crimes. Therefore,
+# most frequent ones should ideally be first 
 crimes = [
     r"anti-?trust violations?",
     r"banking regulation violations?",
@@ -119,6 +127,7 @@ crimes = [
     r"violated the Controlled Substances Act",
 
 ]
+# below acquittal/dismissal triages should not be changed, unless new insight is found
 aquittals = [
     r"ac?quitt(al|ed)",
     r"pardon(ed)?",
@@ -131,22 +140,32 @@ dismissals = [
     r"dropped",
     r"case filed"
 ]
-
-words_apart = 20 # maximum distance of words apart from crime and conviction when matching cirme frst and conviction second
+# modify as appropriate. Values 20 and 800 are directed as satisfactory thesholds
+words_apart = 20 # maximum distance of words apart from crime and conviction when matching offence frist and conviction second
 max_rep_length = 800 # maximum report length for processing, longer that this will get tagged for review
+
+# initialise some global variables
 pre_conv = False
-DebugFlg = False
+Debug_Flg = False
+Test_Flag = False
+True_Condition = False
+offence_found = False
+sic_tag = False
+has_list = False
 
 # functions
+
 ####################################################################
 def check_list_sic(list_tag, r):
+    ''' Checks for list that have always SIC CORRECT ststus'''
 #  returns true or false for trapping positive sic lists
 ####################################################################
 # lists that trigger positive sic tag (could be read from a file)
-# not used in this program
-    TrueLists =[]
+# not used in this program (control_reg)
+    
+    true_lists =[] # put list names in here
     list_status = [ False, "Null"]
-    for str_list in TrueLists:
+    for str_list in true_lists:
         if str_list in list_tag:
             list_status = [ True , str_list]
             return list_status
@@ -154,23 +173,22 @@ def check_list_sic(list_tag, r):
 # end check_sic_list()
 ############################################################
 def check_conviction(type, str_report, n):
-# returning True, False, or None
-# checks if there was a convitcion for the crime type
-# type : crime (string)
+    ''' Check if there was a convitcion for the offence type'''
+
+# type : crime/offence (string/regex)
 # str_report : record (report column) (string)
 # r: row begin processed, for informational purposes only (debugging)
-# returns 1 if found and issue follows conviction (writes)
-# returns 2 if found and issue is followed by conviction (writes)
-# returns -1 if issue is followed by conviction but too far apart (no write)
-# returns -2 if conviction found with reversal (acquittal) found (writes)
-# returns 0 is no conviction was found at all (no write)
-# the reason for no write cases is that they normlly result in review manually,
-# and allows for possible further processing, whereas the write cases
-# nresult in SIC Tag  correct or incorrect, a clear cut case.
+# returns 1 if found and issue follows conviction (no writes)
+# returns 2 if found and issue is followed by conviction (no writes)
+# returns -1 if issue is followed by conviction but too far apart (writes)
+# returns -2 if conviction found with reversal (acquittal) found (no writes)
+# returns 0 is no conviction was found at all (no writes)
+# the reason for write case (-1) is in case there is no further processing that changes
+# the status later. 
 ############################################################
     post_conv = 0
     long_flag = False
-    global words_apart, DebugFlg, preconv_option
+    global words_apart, Debug_Flg
     phrase = [
         r"found guilty",
         r"convicted",
@@ -193,17 +211,15 @@ def check_conviction(type, str_report, n):
    
     for str in phrase:
         long_flag = False
-        # search crime after conviction. Distance of words are not checked as crime usually follows conviction after a few words
-        #  if specified after.
+        # search conviction before crime. Distance of words are checked here, but may not be necessary, 
+        # as crime usually follows conviction after a few words if specified after.
         s_str = str + ' .*?' + type  # RegEx word followed by space and anythnig in between and the second word
-        if DebugFlg:
-            print(n, s_str)
-            input("Press return ")
         x = RegexSearch(s_str, str_report, n)
         if x: 
             # conviction found
-            if DebugFlg:
-                print(n, x.group())
+            if Debug_Flg:
+                log.output(n, x.group())
+            # check if distance between offense and convictions is large
             words = re.split('\s', x.group())
             if len(words) > words_apart:
                 # crime too far from sentence, look for another sentence further ahead, in case there are two
@@ -218,24 +234,27 @@ def check_conviction(type, str_report, n):
                         ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
                         if ListCheck:
                             ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Remote connection between conviction and offence. From List")
+                            xls.review += 1
                         else:
                             ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Remote connection between conviction and offence")
-                        return True                       # issue is too far for a conclusive conviction
-                    # issue is too far for a conclusive conviction
-                # let's ignore this., but flag for review in case we do not find further evidence (return -1)
+                            xls.review += 1
+                        return -1  # issue is too far for a conclusive conviction
+                    # end if len()
+                # enf if y
             # end if (len)
             # we have foud conviction, check for aquittals
             for tag in aquittals:
-                s_str = type + '.*' + tag # may be let's not check for crime type as well
+                s_str = type + '.*' + tag
                 s_aquitt = RegexSearch(s_str, str_report, n)
                 if s_aquitt:
-                    print("Dismissal found                                ", end='\r')   
+                    print(n, "Dismissal found                                ", end='\r')   
                     return -2
                     # this may be revised
             # end for (aquitals)
             return 2
             
-        # if not found, check the other way around. problem is if there was a conviction for somthing different, in which
+        # if not found, check the other way around (conviction after crime). 
+        # Problem is, if there was a conviction for something different, in which
         # case we should not check for preious mentions of issues
         # this is difficult. Here some tries just to catch these common ones
         if "sentenced for" in str_report:
@@ -254,7 +273,7 @@ def check_conviction(type, str_report, n):
             if x:
                 continue
         else:
-            if DebugFlg:
+            if Debug_Flg:
                 print(type, "\n", str)
                 print(n, "sentenced for x years found")
                 input("enter")
@@ -270,14 +289,14 @@ def check_conviction(type, str_report, n):
         x= RegexSearch(s_str, str_report, n)
         if x:
             continue
-         # now the other way around, conviction after crime
+        # now the check conviction after crime
         s_str = type + r'.*? ' + str
         x = RegexSearch(s_str, str_report, n)
         if x:
-            if DebugFlg:
+            if Debug_Flg:
                 print(n, x.group())
             # found. if there are too many words between the type and the conviction phrase, assume review
-            # there may be a later repetiion of the word wich decreases the word count, do we check twice
+            # there may be a later repetiion of the word (crime) wich decreases the word count, we check twice
             words = re.split("\s", x.group()) # split into words
 
             if len(words) > words_apart: # too many words in between, but there could be further mention of issue
@@ -309,16 +328,14 @@ def check_conviction(type, str_report, n):
     return post_conv
 #####################################################################
 def check_item(item, str_Triage, r, pre_conv, src_text):
+    '''Checks triage for record and writes approriate tag if offence/issue was found. '''
 # normally called by check_issues()
+# will not write to record if no match was found or exception (long content)
 #####################################################################
-    global DebugFlg, ListCheck, ws, dismissals
+    global Debug_Flg, ListCheck, ws, dismissals
     sic_tag = False
     s_crime = RegexSearch(item, str_Triage, r)
     if s_crime:
-        # check for weapons of mass destruction
-        if "weapons of mass destruction" in src_text:
-            # invalidates crime found
-            return False
         if pre_conv:
             # check for dismissed
             for tag in dismissals:
@@ -341,7 +358,7 @@ def check_item(item, str_Triage, r, pre_conv, src_text):
         # post conv processing
         chk = check_conviction(item, str_Triage, r)
         if chk == -1:
-            # too far away, flag for review (for now)
+            # too far away, flag for review (for now). It was written in file in function
             print(r, "SIC Review                     ", end='\r')
             sic_tag = None
         if chk == 1:
@@ -397,7 +414,7 @@ def check_issues(issues, str_Triage, r, preconv, Source):
 # and None (to review, long list or report, or distance) 
 # 
 #####################################################################
-    global DebugFlg, ws
+    global Debug_Flg, ws
     sic_tag = False
     # first, let's check review tags
 
@@ -415,23 +432,25 @@ def check_issues(issues, str_Triage, r, preconv, Source):
 # no officiallists, read from reports
 # with officialist, read additional info
 # the option wil be given by argument to program
-Testflag = False
-DebugFlg = False
-TrueCondition = False
+Test_Flag = False
+Debug_Flg = False
+True_Condition = False
 offence_found = False
 row_limit = 0
 sic_tag = False
+has_list = False
+
 # opem logger
-logfile = 'control_reg'
+
 log = Logger(logfile)
 
-xls = ExcelFile('control_regulations', ver)
+xls = ExcelFile(program_name', ver)
 
 if xls.debug_flag:
-    DebugFlg = True
+    Debug_Flg = True
 if xls.test_flag:
     row_limit = xls.row_limit
-    Testflag = True
+    Test_Flag = True
 if xls.nolist:
     no_list = True
 else:
@@ -439,7 +458,7 @@ else:
 ws = xls.ws
 head = ExcelHeader(ws)
 
-if DebugFlg:
+if Debug_Flg:
     print(head.col)
     input('Enter > ')
 # for each row
@@ -449,7 +468,7 @@ for row in ws.rows:
     r += 1
     if r == 1:
         continue
-    if Testflag:
+    if Test_Flag:
         if r > row_limit:
             break
     # read row into variables (only useful ones)
@@ -468,8 +487,8 @@ for row in ws.rows:
         c_Triage = c_AdditionalInfo
         c_source = "LST"
     c_lists = [] # resets list of OifficialLists
-    ListsTrue = False
-    LongReport = False
+    has_list = False
+    Long_Report = False
     ListCheck = False
     sic_tag = False
     if head.missing_col == 'Type':
@@ -499,8 +518,18 @@ for row in ws.rows:
             xls.long_entries +=1
             xls.review += 1
             continue
+    # no true lists in control+reg
+    #if c_OfficialLists and c_OfficialLists != "NULL":
+    #    sic_list = check_list_sic(c_OfficialLists, r)
+    #    if sic_list[0] == True:
+    #        print(r, "Tagged list", end='\r')
+    #        ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+    #        ws.cell(row=r, column=head.col['Remarks'], value='OFFICIAL LIST : ' + sic_list[1])
+    #        xls.off_lists += 1
+    #        xls.sic_correct += 1
+    #        continue # no further processing needed
 #    if c_OfficialLists and c_OfficialLists != "NULL":
-#        if DebugFlg:
+#        if Debug_Flg:
 #            print(r, "List found")
 #        l_list = c_OfficialLists.split(';')
 #        i=0
@@ -514,11 +543,11 @@ for row in ws.rows:
 #                 # we do not need to strip the brackets
 #                print(r, "List match ", tag, "found            ", end="\r")
 #                i += 1
-#                ListsTrue = True
+#                has_list = True
 #            # end if
 #        # end for
 #    # end if (OfficialLists)
- #   if DebugFlg:
+ #   if Debug_Flg:
  #       print(c_lists)
     
     # we now have TagInfo populated
@@ -540,15 +569,16 @@ for row in ws.rows:
         xls.preconv +=1
     sic_tag = check_issues(crimes, c_Triage, r, pre_conv, c_source)
     if sic_tag == True:
-        continue # go to next record
+        continue # go to next record, ignore lists as a SIC tag was found
     # check in lists, never executed in control+regulations
-    if ListsTrue:
+   
+    if has_list:
         print("Checking additional in Lists", end="\r")
         ListCheck = True
         for x_Triage in c_lists:
-            LongReport = False
+            Long_Report = False
             if len(x_Triage) > max_rep_length:
-                LongReport = True
+                Long_Report = True
                 ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
                 ws.cell(row=r, column=head.col['Remarks'], value="LONG REPORT [LIST]")
                 print(r, "Long list enry.                         ", end='\r')
@@ -566,7 +596,7 @@ for row in ws.rows:
     if sic_tag == True:
         continue
     if sic_tag == False:
-        if LongReport:
+        if Long_Report:
             print (r, "Review manually.                                 ", end='\r')
             ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
             ws.cell(row=r, column=head.col['Remarks'], value="Content to long.")
@@ -603,7 +633,7 @@ log.toutput('Done')
 print('Summary')
 log.output('Summary')
 print('=======')
-print('=======')
+log.output('=======')
 print('Entities:\t',xls.entities)
 log.output('Entities:\t',xls.entities)
 print('Long Entries:\t',xls.long_entries)

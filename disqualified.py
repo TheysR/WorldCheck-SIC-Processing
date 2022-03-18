@@ -16,6 +16,7 @@ from common import ExcelFile, ExcelHeader, RegexSearch
 # first crime found and convicted for, ends check for further crimes, that's why
 # most frequent ones should be first 
 ver = '1.1'
+program_name = 'disqualified'
 # triage (regular expressions)
 crimes = [
     r"(banned|barred|prohibited) from (holding|seeking) public (office|employment)",
@@ -354,7 +355,7 @@ offence_found = False
 row_limit = 0
 sic_tag = False
 
-xls = ExcelFile('disqualified', ver)
+xls = ExcelFile(program_name, ver)
 
 if xls.debug_flag:
     DebugFlg = True

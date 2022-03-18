@@ -116,7 +116,7 @@ class ExcelFile:
     ''' Opens excel file (workbook and workheet) from command line arguments
         params: program name and version
         Rules for filenames and worksheets (from command lines arguments):
-        - filename is org_File.xlsx. Argument can be specifided with or without .xlsx ending
+        - filename is org_file.xlsx. Argument can be specifided with or without .xlsx ending
         - Destination file is 'org_file Passed.xlsx'
         - Worksheet name is same as filename (without .xlsx), unless specified by -ws argument
         It is up to the calling program to honour the flags (pc, debug, test)  
@@ -124,7 +124,7 @@ class ExcelFile:
 #   Methods:
 #   ExcelSave(): saves new workbook with assigned filename at __init__
 #   Propetries:
-#   org_file : file ro read
+#   org_file : file to read
 #   dest_file : file wo write (destination file)
 #   worksheet : worksheet name
 #   wb : open workbook object
@@ -146,7 +146,7 @@ class ExcelFile:
         parser.add_argument('--nolist', help='option without official lists', action='store_true')
         args = parser.parse_args()
         if args.debug:
-            print("Debug mode")
+            print("Debug (verbose) mode")
             self.debug_flag = True
         else:
             self.debug_flag = False
@@ -159,13 +159,15 @@ class ExcelFile:
         if args.test:
             self.test_flag = True
             self.row_limit = args.test
-            print("Test mode: processing", self.row_limit, "rows")
+            print("Test mode: processing", self.row_limit, "rows only")
         else:
             self.test_flag = False
             self.row_limit = 0
         self.nolist = False
         if args.nolist:
             self.nolist = True
+        else:
+            self.nolist = False
         if ".xlsx" not in org_file:
             if self.preconv_option:
                 self.dest_file = org_file + ' Preconv Passed.xlsx'
@@ -228,7 +230,7 @@ class ExcelFile:
 ############################################################################################
 def RegexSearch(regex, String, r):
     """"Search for string in text using regex."""
-# helper function to search for regular expression to catch error
+# wrapper function to search for regular expression to catch error
 # and use case ignore flag
 #############################################################################################
     try:
@@ -260,9 +262,9 @@ class Logger:
         print('----------------------------', file=f)
     
     # write without timestamp    
-    def output(self, txt):        
+    def output(self, *txt):
         try:
-            print(txt, file=self.stream)
+            print(*txt, file=self.stream)
             return True
         except:
             print('Cannot write to file ', self.dest_file)
@@ -274,8 +276,8 @@ class Logger:
         return True
     
     # write with timestamp    
-    def toutput(self, txt):
-        print(datetime.datetime.now(),': ', txt, file=self.stream)
+    def toutput(self, *txt):
+        self.output(datetime.datetime.now(),': ', *txt)
         return True
     
     # method to expliclty close stream (should no be used often)    
