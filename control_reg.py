@@ -444,7 +444,7 @@ has_list = False
 
 log = Logger(logfile)
 
-xls = ExcelFile(program_name', ver)
+xls = ExcelFile(program_name, ver)
 
 if xls.debug_flag:
     Debug_Flg = True
