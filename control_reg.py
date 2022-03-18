@@ -3,19 +3,19 @@
 # LOGIC FOR CONGTROL AND REGULATION
 # (c) 2022 Theys Radmann
 # ver 1.0
-# 
+# ver 2.0 : Entities is prcvessed, added Financial Services Warnings positive
 #######################################################################
 # modules/libararies needed
 from openpyxl import load_workbook, Workbook
 import re  # regex
 import sys
 import argparse
-from common import ExcelFile, ExcelHeader, RegexSearch
+from common import ExcelFile, ExcelHeader, RegexSearch, Logger
 # definition of crime categories
 # order of some crimes in list is important for logic and efficiency
 # first crime found and convicted for, ends check for further crimes, that's why
 # most frequent ones should be first 
-ver = '1.1'
+ver = '2.0'
 # triage (regular expressions)
 crimes = [
     r"anti-?trust violations?",
@@ -46,7 +46,7 @@ crimes = [
     r"(violating|violation of) the (banking|civil service|clean air|dodd-frank|foreign business|securities( and excange)?|wildlife) Act",
     r"(violation of|violating) the (truth in lending|argicultural finance) act"
     r"violating the( colorado)? organi[sz]ed crime control act",
-    r"violating the( indiana)? securities act",
+    r"violating the( \w+?)? securities act",
     r"(violating|violation of) the (anti-smuglging|public office election) law",
     r"violating( new york)? sate banking law",
     r"violating the law on financing of terrorism",
@@ -106,6 +106,17 @@ crimes = [
     r"violating regulations on management and use of state assets",
     r"contravening the Marine Living Resources Act",
     r"serious infringement of rules and regulations",
+    # additional (with lists only)
+    r" not complying with the requirements of international maritime regulations",
+    r"violation of legislation on protection of economic competition",
+    r"violated the anti-money laundering provisions of the Bank Secrecy Act",
+    r"violation of the International Emergency Economic Powers Act",
+    r"violation of financial legislation",
+    r"violation of the Colorado Securities Act",
+    r"violations of the Clean Air Act",
+    r"violations of regulations in relation to Law",
+    r"Medicaid Claims Act violations",
+    r"violated the Controlled Substances Act",
 
 ]
 aquittals = [
@@ -153,6 +164,9 @@ def check_conviction(type, str_report, n):
 # returns -1 if issue is followed by conviction but too far apart (no write)
 # returns -2 if conviction found with reversal (acquittal) found (writes)
 # returns 0 is no conviction was found at all (no write)
+# the reason for no write cases is that they normlly result in review manually,
+# and allows for possible further processing, whereas the write cases
+# nresult in SIC Tag  correct or incorrect, a clear cut case.
 ############################################################
     post_conv = 0
     long_flag = False
@@ -407,6 +421,9 @@ TrueCondition = False
 offence_found = False
 row_limit = 0
 sic_tag = False
+# opem logger
+logfile = 'control_reg'
+log = Logger(logfile)
 
 xls = ExcelFile('control_regulations', ver)
 
@@ -456,26 +473,19 @@ for row in ws.rows:
     ListCheck = False
     sic_tag = False
     if head.missing_col == 'Type':
-        # classify according to caterogy
+        # classify according to caterogy (control/reg)
         match c_categories:
             case "VESSEL" | "EMBARGO VESSEL" | "CORPORATE" | "ORGANISATION" | "POLITICAL PARTY" | "TRADE UNION" | "PORT" | "BANK":
                 c_Type = "E"
+                xls.entities += 1
             case _: 
                 c_Type = "I"
-    # Entities are flagged for manual review
-    if c_Type == "E":
-        # entity, flag for manual review
-        print(r, "Entity: Review manually", end='\r')
-        ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
-        ws.cell(row=r, column=head.col['Remarks'], value='ENTITY')
-        print(r, "Entity.                                 ", end='\r')
-        xls.entities +=1
-        xls.review += 1
-        continue
-    if DebugFlg:
-        print(r, c_Reports)
-        input('Enter > ')
-    if not c_Reports and no_list == False:
+   
+    # uptate remarks column to be able to filter for entities (control/reg)
+    if c_Type == 'E':
+        ws.cell(row=r, column=head.col['Categories'], value='ENTITY:' + c_categories)
+        
+    if not c_Reports and no_list: # no_List option take triage from report in control/reg
         ws.cell(row=r, column=head.col['Status'], value='NO REPORT')
         ws.cell(row=r, column=head.col['Remarks'], value='No report column')
         print(r, "No report found.                         ", end='\r')
@@ -513,6 +523,14 @@ for row in ws.rows:
     
     # we now have TagInfo populated
     # Review keywords
+    if "[FINANCIAL SERVICES WARNINGS]" in c_AdditionalInfo:
+        ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+        ws.cell(row=r, column=head.col['Remarks'], value='FSW')
+        print(r, "Financial Services Warning.                         ", end='\r')
+        xls.sic_correct +=1
+        xls.other += 1
+        continue    
+
     # flag pre/post conv
     if "CRIME" in c_categories:
         pre_conv = False
@@ -539,7 +557,7 @@ for row in ws.rows:
                 continue # next list entry
             if sic_tag:
                 break # no more list cheks
-            sic_tag = check_issues(crimes, x_Triage, r, pre_conv, 'LIST')
+            sic_tag = check_issues(crimes, x_Triage, r, pre_conv, 'LST')
             if sic_tag == True:
                 break
         # end for (list)
@@ -579,18 +597,34 @@ except:
     input("\nCannot write to file. Try to close it first and press enter > ")
     print("Saving...")
     xls.ExcelSave()
+# print summary. perhaps write to log fle?
 print('Done')
+log.toutput('Done')
 print('Summary')
+log.output('Summary')
+print('=======')
 print('=======')
 print('Entities:\t',xls.entities)
+log.output('Entities:\t',xls.entities)
 print('Long Entries:\t',xls.long_entries)
+log.output('Long Entries:\t',xls.long_entries)
 print('Official Lists:\t', xls.off_lists)
+log.output('Official Lists:\t', xls.off_lists)
 print('No Report:\t',xls.no_report)
+log.output('No Report:\t',xls.no_report)
 print('Pre Conv:\t', xls.preconv)
+log.output('Pre Conv:\t', xls.preconv)
 print('Post Conv:\t',xls.postconv)
+log.output('Post Conv:\t',xls.postconv)
+print('Other:\t\t', xls.other)
+log.output('Other:\t\t', xls.other)
 print('SIC Correct:\t',xls.sic_correct)
+log.output('SIC Correct:\t',xls.sic_correct)
 print('SIC Incorrect:\t',xls.sic_incorrect)
+log.output('SIC Incorrect:\t',xls.sic_incorrect)
 print('Man. Review:\t',xls.review)
+log.output('Man. Review:\t',xls.review)
 print('Total:\t\t', r)
+log.output('Total:\t\t', r)
 # end program ######################################################################################################
  

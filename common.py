@@ -6,6 +6,7 @@ from sre_compile import isstring
 from openpyxl import workbook, load_workbook
 import sys, re
 import argparse
+import datetime, os
 ##########################################################################
 class ExcelHeader:
     """reads header row from excel worksheet and assigns column numbers."""
@@ -207,6 +208,7 @@ class ExcelFile:
         self.preconv = 0
         self.postconv = 0
         self.entities = 0
+        self.other = 0
         self.off_lists = 0
         self.review = 0
         self.sic_correct = 0
@@ -237,3 +239,45 @@ def RegexSearch(regex, String, r):
     mtch = p.search(String)
     return mtch
 # end function
+#############################################################################################
+class Logger:
+    '''Writes to log file '''
+    def __init__(self, outfile):
+        if ".log" not in outfile:
+            self.dest_file = outfile + '.log'
+        else:
+            self.dest_file = outfile
+        t = datetime.datetime.now()
+        
+        try:
+            f = open(self.dest_file, 'a')
+        except:
+            print('Cannot open log file ',self.dest_file)
+            return False
+        self.stream = f
+
+        print('\n', t, file=f)
+        print('----------------------------', file=f)
+    
+    # write without timestamp    
+    def output(self, txt):        
+        try:
+            print(txt, file=self.stream)
+            return True
+        except:
+            print('Cannot write to file ', self.dest_file)
+            return False
+    
+    # write timestamp    
+    def timestamp(self):
+        print(datetime.datetime.now(), file=self.stream)
+        return True
+    
+    # write with timestamp    
+    def toutput(self, txt):
+        print(datetime.datetime.now(),': ', txt, file=self.stream)
+        return True
+    
+    # method to expliclty close stream (should no be used often)    
+    def close(self):
+        os.close(self.stream)
