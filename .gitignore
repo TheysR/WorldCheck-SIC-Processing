@@ -9,3 +9,14 @@
 *.pptx
 testlog.txt
 logfile.txt
+narcotics1.py
+openfile.py
+pyvenvex.py
+__pycache__/common.cpython-310.pyc
+Narco/__pycache__/common.cpython-310.pyc
+.gitignore
+!NarcList.xlsx
+!PharmList.xlsx
+!OrgCrimes.xlsx
+Public/
+
