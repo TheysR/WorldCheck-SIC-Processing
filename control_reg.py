@@ -420,6 +420,7 @@ def check_issues(issues, str_Triage, r, preconv, Source):
 
     for x_crime in issues:
         sic_tag = check_item(x_crime, str_Triage, r, preconv, Source)
+        
         if sic_tag:
             break
     # end for (issues loop)
@@ -627,7 +628,7 @@ except:
     input("\nCannot write to file. Try to close it first and press enter > ")
     print("Saving...")
     xls.ExcelSave()
-# print summary. perhaps write to log fle?
+# print summary. 
 print('Done')
 log.toutput('Done')
 print('Summary')
@@ -635,19 +636,19 @@ log.output('Summary')
 print('=======')
 log.output('=======')
 print('Entities:\t',xls.entities)
-log.output('Entities:\t',xls.entities)
+log.output('Entities:\t\t',xls.entities)
 print('Long Entries:\t',xls.long_entries)
 log.output('Long Entries:\t',xls.long_entries)
 print('Official Lists:\t', xls.off_lists)
 log.output('Official Lists:\t', xls.off_lists)
 print('No Report:\t',xls.no_report)
-log.output('No Report:\t',xls.no_report)
+log.output('No Report:\t\t',xls.no_report)
 print('Pre Conv:\t', xls.preconv)
-log.output('Pre Conv:\t', xls.preconv)
+log.output('Pre Conv:\t\t', xls.preconv)
 print('Post Conv:\t',xls.postconv)
-log.output('Post Conv:\t',xls.postconv)
+log.output('Post Conv:\t\t',xls.postconv)
 print('Other:\t\t', xls.other)
-log.output('Other:\t\t', xls.other)
+log.output('Other:\t\t\t', xls.other)
 print('SIC Correct:\t',xls.sic_correct)
 log.output('SIC Correct:\t',xls.sic_correct)
 print('SIC Incorrect:\t',xls.sic_incorrect)
@@ -655,6 +656,6 @@ log.output('SIC Incorrect:\t',xls.sic_incorrect)
 print('Man. Review:\t',xls.review)
 log.output('Man. Review:\t',xls.review)
 print('Total:\t\t', r)
-log.output('Total:\t\t', r)
+log.output('Total:\t\t\t', r)
 # end program ######################################################################################################
  

@@ -13,11 +13,14 @@ from openpyxl import Workbook, load_workbook
 import re  # regex
 import sys
 import argparse
+from common import ExcelFile, ExcelHeader, RegexSearch, Logger
 # definition of crime categories
 # order of some crimes in list is important for logic and efficiency
 # first crime found and convicted for, ends check for further crimes, that's why
 # put most frequent ones first 
 ver = '1.3'
+program_name = 'forgery'
+logfile = 'forgery.log'
 crimes = [
     r"forging",
     r"uttering",
@@ -197,32 +200,54 @@ crimes = [
     r"falsif((y(ing)?)|ied)( .+?){0,4}? (commision|account|cards|electoral|identity|loan applications)",
     r"falsif((y(ing)?)|ied)( .+?)? (((payroll|loan|mortgage) application(s)?)|((new )?account)|((sales|personal|income) tax returns))"
     ]
+# below acquittal/dismissal triages should not be changed, unless new insight is found
+aquittals = [
+    r"ac?quitt(al|ed)",
+    r"pardon(ed)?",
+    r"case filed",
+    r"dismissed",
+    r"dropped"
+]
+dismissals = [
+    r"dismiss(ed|al)",
+    r"dropped",
+    r"case filed"
+]
 words_apart = 20 # maximum distance of words apart from crime and conviction when matching cirme frst and conviction second
 pre_conv = False
+max_rep_length = 800
 # functions
 ############################################################
 def check_conviction(type, str_report, n):
-# returning True, False, or None
-# checks if there was a convitcion for the crime type
-# type : crime (string)
+    ''' Check if there was a convitcion for the offence type'''
+
+# type : crime/offence (string/regex)
 # str_report : record (report column) (string)
 # r: row begin processed, for informational purposes only (debugging)
+# returns 1 if found and issue follows conviction (no writes)
+# returns 2 if found and issue is followed by conviction (no writes)
+# returns -1 if issue is followed by conviction but too far apart (writes)
+# returns -2 if conviction found with reversal (acquittal) found (no writes)
+# returns 0 is no conviction was found at all (no writes)
+# the reason for write case (-1) is in case there is no further processing that changes
+# the status later. 
 ############################################################
-    global words_apart, DebugFlg, preconv_option
     post_conv = 0
+    long_flag = False
+    global words_apart, Debug_Flg
     phrase = [
+        r"found guilty",
         r"convicted",
-        r"sentence[d]*",
+        r"sentence[d]?",
         r"pleaded guilty",
         r"pleaded no contest",
-        r"found guilty",
         r"imprisoned",
         r"fined",
         r"arrested .+ serve",
         r"for conviction",
-        r"ordered .* *to pay",
+        r"ordered .*\s*to (pay|serve)",
         r"incarcerated",
-        r"amditted guilt",
+        r"admitted guilt",
         r"served probation",
         r"to serve .* imprisonment",
         r'previous conviction[s]* .*?'
@@ -231,231 +256,279 @@ def check_conviction(type, str_report, n):
     # build search string with crime type
    
     for str in phrase:
-        # search keyword after conviction. 
-        s_str = str + ' .*?' + type  # RegEx  non-greedy
-        p = re.compile(s_str, re.IGNORECASE)
-        x = p.search(str_report)
-        if x:
-            words = re.split("\s", x.group())
-            if len(words) > words_apart: # too many words in between, but there could be further mention of conviction
-                # look for conviction further ahead
-                y = p.search(str_report, x.start()+1)
+        long_flag = False
+        # search conviction before crime. Distance of words are checked here, but may not be necessary, 
+        # as crime usually follows conviction after a few words if specified after.
+        s_str = str + ' .*?' + type  # RegEx word followed by space and anythnig in between and the second word
+        x = RegexSearch(s_str, str_report, n)
+        if x: 
+            # conviction found
+            if Debug_Flg:
+                log.output(n, x.group())
+            # check if distance between offense and convictions is large
+            words = re.split('\s', x.group())
+            if len(words) > words_apart:
+                # crime too far from sentence, look for another sentence further ahead, in case there are two
+                n_idx = slice(x.start()+1, len(str_report)-1)
+                y =RegexSearch(s_str, str_report[n_idx], n)
                 if y:
                     words = re.split("\s", y.group())
                     if len(words) > words_apart:
                         print (n, "Too many words between issue and conv", end="\r")
                         post_conv = -1 # to flag for review
-                else:
-                    return 1 
-            else:
-                return 1
-        # if not found, check the other way around. problem is if there was a conviction for something different, in which
+                        print(r, "SIC Review                            ", end='\r')
+                        ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+                        if ListCheck:
+                            ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Remote connection between conviction and offence. From List")
+                            xls.review += 1
+                        else:
+                            ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Remote connection between conviction and offence")
+                            xls.review += 1
+                        return -1  # issue is too far for a conclusive conviction
+                    # end if len()
+                # enf if y
+            # end if (len)
+            # we have foud conviction, check for aquittals
+            for tag in aquittals:
+                s_str = type + '.*' + tag
+                s_aquitt = RegexSearch(s_str, str_report, n)
+                if s_aquitt:
+                    print(n, "Dismissal found                                ", end='\r')   
+                    return -2
+                    # this may be revised
+            # end for (aquitals)
+            return 2
+            
+        # if not found, check the other way around (conviction after crime). 
+        # Problem is, if there was a conviction for something different, in which
         # case we should not check for preious mentions of issues
         # this is difficult. Here some tries just to catch these common ones
-        # ther eare a few cases in which 
-        s_str = 'sentenced for \d+ years'
-        p = re.compile(s_str, re.I)
-        x = p.search(str_report)
-        if not x:
-            s_str = "sentence[d]* .*? *for "
-            p = re.compile(s_str, re.I)
-            x = p.search(str_report)
-            if x:
-                continue
-        else:
-            if DebugFlg:
-                print(type, "\n", str)
-                print(n, "sentenced for x years found")
-                input("enter")
-            pass
+        if "sentenced for" in str_report:
+            continue
         if "pleaded guilty to" in str_report:
             continue
-        if "found guilty of" in str_report:
+        if "found guilty for" in str_report:
             continue
         if "pleaded no contest to" in str_report:
             continue
-        if "convicted for" in str_report:
-            continue
+        s_str = 'sentenced for \d+ years'
+        x = RegexSearch(s_str, str_report, n)
+        if not x:
+            s_str = "sentence[d]* .*? *for "
+            x = RegexSearch(s_str, str_report, n)
+            if x:
+                continue
+        else:
+            if Debug_Flg:
+                print(type, "\n", str)
+                print(n, "sentenced for x years found")
+                input("enter")
         s_str = "sentence[d]* .*? *on charges of"
-        p= re.compile(s_str, re.I)
-        x= p.search(str_report)
+        x= RegexSearch(s_str, str_report, n)
         if x:
             continue
         s_str = "found guilty .*? *on charges of"
-        p= re.compile(s_str, re.I)
-        x= p.search(str_report)
+        x= RegexSearch(s_str, str_report, n)
         if x:
             continue
         s_str = 'pleaded guilty .*? *to'
-        p= re.compile(s_str, re.I)
-        x= p.search(str_report)
+        x= RegexSearch(s_str, str_report, n)
         if x:
             continue
-        # no convitcion for crime found and no specific conviction noticed. We check the other way around
+        # now the check conviction after crime
         s_str = type + r'.*? ' + str
-        p = re.compile(s_str, re.IGNORECASE)
-        x = p.search(str_report)
+        x = RegexSearch(s_str, str_report, n)
         if x:
-            if DebugFlg:
+            if Debug_Flg:
                 print(n, x.group())
             # found. if there are too many words between the type and the conviction phrase, assume review
-            # there may be a later repetiion of the word wich decreases the word count, do we check twice
+            # there may be a later repetiion of the word (crime) wich decreases the word count, we check twice
             words = re.split("\s", x.group()) # split into words
 
             if len(words) > words_apart: # too many words in between, but there could be further mention of issue
                 # look for issue further ahead
-                y = p.search(str_report, x.start()+1)
+                n_idx = slice(x.start()+1, len(str_report)-1)
+                y = RegexSearch(s_str, str_report[n_idx], n)
                 if y:
                     words = re.split("\s", y.group())
                     if len(words) > words_apart:
                         print (n, "Too many words between issue and conv", end="\r")
                         post_conv = -1 # to flag for review
-                else:
-                    return 2
-            else:
-                return 2
-            # end if
-        else:
-            pass
-        # end if
-    # end for
+                        long_flag = True
+                # end if (y)
+            # end if (Len)
+            if long_flag == False:
+                for tag in aquittals:
+                    s_str = type + '.*' + tag
+                    s_aquitt = RegexSearch(s_str, str_report, n)
+                    if s_aquitt:
+                        print(n, "Aquittal found                                ", end='\r')   
+                        return -2 
+                    # this may be revised
+                # end for (aquitals)
+            # end if (long_flag)
+            # found without aquittal
+            return 1
+        # end if (x)
+    # end for (str)
     return post_conv
 # end function ######################################################
 #####################################################################
-def check_issue(issues, str_Triage, r):
-# checks if crime was found and convicted
-# # returns True (crime found and written in record), False, and None (to review) 
-# writes record if correct
+def check_item(item, str_Triage, r, pre_conv, src_text):
+    '''Checks triage for record and writes approriate tag if offence/issue was found. '''
+# normally called by check_issues()
+# will not write to record if no match was found or exception (long content)
 #####################################################################
-    global DebugFlg, preconv_option, pre_conv, ListCheck
-    sic_crime = False
-    i = 0
+    global Debug_Flg, ListCheck, ws, dismissals
+    sic_tag = False
+    s_crime = RegexSearch(item, str_Triage, r)
+    if s_crime:
+        
+        if pre_conv:
+            # check for dismissed
+            for tag in dismissals:
+                s_str = item + '.*' + tag # we may ommit item in search string
+                s_diss = RegexSearch(s_str, str_Triage, r)
+                if s_diss:
+                    print(r, "Dismissal found                                ", end='\r')   
+                    ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+                    ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv: Dismissal found ["+src_text+"]")
+                    xls.review += 1
+                    return True
+                # end if
+            # end for
+            print(r, 'SIC correct                                            ', end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+            ws.cell(row=r, column=head.col['Remarks'], value="Pre Conv ["+src_text+"]")
+            xls.sic_correct += 1
+            return True
+        # end if preconv
+        # post conv processing
+        chk = check_conviction(item, str_Triage, r)
+        if chk == -1:
+            # too far away, flag for review (for now). It was written in file in function
+            print(r, "SIC Review                     ", end='\r')
+            sic_tag = None
+        if chk == 1:
+            # write correct to sheet
+            print(r, "SIC Correct                             ", end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+            ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Conviction after Triage ["+src_text+"]")
+            xls.sic_correct += 1
+            return True
+        if chk == 2:
+            # write correct to sheet
+            print(r, "SIC Correct                             ", end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="SIC TAG CORRECT")
+            ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: Conviction before Triage ["+src_text+"]")
+            xls.sic_correct += 1
+            return True
+        if chk == -2:
+            print(r, 'Review manually                                ', end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: acquittal found ["+src_text+"]")
+            xls.review += 1
+            return True
+        # if no conviction was found, check if there was a dismissal
+        if chk == 0:
+            for tag in dismissals:
+                s_str = item + '.*' + tag # we may ommit item in search string
+                s_diss = RegexSearch(s_str, str_Triage, r)
+                if s_diss:
+                    print(r, "Dismissal found                                ", end='\r')   
+                    ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+                    ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: No conviction, dismissal found ["+src_text+"]")
+                    xls.review += 1
+                    return True # behaves like correct as no further offences are affeced if there is a dismissal
+                    # this may be revised
+                # end if
+            # end for
+            print (r, 'Tag correct - post conv', end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: No conviction ["+src_text+"]")
+            xls.review += 1
+            return True
+
+    # end if (s_crime true)
+    return sic_tag  # can only be False or None here
+        
+
+#####################################################################
+def check_issues(issues, str_Triage, r, preconv, Source):
+# checks if crime was found and convicted
+# # returns True if offense found
+# (crime found and written in record in check_item()), 
+# False (no tag/offense found), 
+# and None (to review, long list or report, or distance) 
+# 
+#####################################################################
+    global DebugFlg
+    sic_tag = False
+    # first, let's check review tags
+
     for x_crime in issues:
-        i += 1
-        print(r, 'Checking issue:', i , "                                             ", end='\r')
-        try:
-            p = re.compile(x_crime, re.I) # to ignore case
-        except:
-            print('wrong regx string: ', x_crime)
-            sys.exit()
-        s_crime = p.search(str_Triage)
-        if s_crime:
-            # put exclusions here
-            if x_crime == "uttering":
-                x = re.search(r"uttering[.].*( currency|( cheque[s]*)|( bank[ ]?note)| money)", str_Triage)
-                if x:
-                    # crime is to be evaluated manually, may be forgery alone w/o currency.
-                    return -1
-                x = re.search(r"uttering.*( currency|( cheque[s]*)|( bank[ ]?note)| money)", str_Triage)
-                if x:
-                    continue
-            if x_crime == "forge":
-                x = re.search(r"forge.*( currency|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
-                if x:
-                    # invalid triage
-                    continue
-            if x_crime == "forgery":
-                x = re.search(r"forgery[.,].*( currency|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
-                if x:
-                    # crime is to be evaluated manually, may be forgery alone w/o currency.
-                    return -1
-                x = re.search(r"forgery.*(( currency)|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
-                if x:
-                    continue
-            if x_crime == "forging":
-                x = re.search(r"forging[.,].*( currency|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
-                if x:
-                    # crime is to be evaluated manually, may be forgery alone w/o currency.
-                    return -1
-                x = re.search(r"forging.*(( currency)|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
-                if x:
-                    continue
-            if x_crime == r"falsification[.,]":
-                x = re.search(r"falsification[.,].*(( currency)|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
-                if x:
-                    return -1
-                # end exclusions ##########
-            # check conviction for crime
-            #? check if match string is too long?
-            pre_conv = True # crime found, no conviction (yet)
-            if preconv_option:
-                print(r, 'SIC Correct                              ', end='\r')
-                if ListCheck:
-                    ws.cell(row=r, column=15, value="CORRECT (LIST)")
-                else:
-                    ws.cell(row=r, column=15, value="CORRECT")
-                return True
-            chk = check_conviction(x_crime, str_Triage, r)
-            if chk == -1:
-                # too far away, flag for review (for now)
-                print(r, "SIC Review                     ", end='\r')
-                sic_crime = None
-                # we do not break as we could find a valid record for another kewword
-            if chk == 1:
-                # write correct to sheet
-                print(r, "SIC Correct                             ", end='\r')
-                ws.cell(row=r, column=15, value="CORRECT CONV")
-                return True
-            if chk == 2:
-                # write correct to sheet
-                print(r, "SIC Correct                             ", end='\r')
-                ws.cell(row=r, column=15, value="CORRECT INF")
-                return True
-                    
-        # end if
-    # end for
-    return sic_crime
+        # exclusions
+        if x_crime == "uttering":
+            x = RegexSearch(r"uttering[.].*( currency|( cheque[s]*)|( bank[ ]?note)| money)", str_Triage)
+            if x:
+                # counter triage, invalid
+                continue
+        if x_crime == "forge":
+            x = RegexSearch(r"forge.*( currency|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
+            if x:
+                # invalid triage
+                continue
+        if x_crime == "forgery":
+            x = RegexSearch(r"forgery[.,]?.*( currency|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
+            if x:
+                # 
+                continue
+        if x_crime == "forging":
+            x = RegexSearch(r"forging[.,]?.*( currency|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
+            if x:
+                # 
+                continue
+        if x_crime == r"falsification[.,]":
+            x = RegexSearch(r"falsification[.,].*(( currency)|( cheque[s]*)|( bank[ ]?note)|( money))", str_Triage)
+            if x:
+                continue
+        # end exclusions ##########
+        sic_tag = check_item(x_crime, str_Triage, r, preconv, Source)
+        if sic_tag:
+            break
+    # end for (issues loop)
+    return sic_tag
 # end funcfions
 ###################################################
 
-# start program
+# start main program
 print('Forgery & Uttering Processing\n' 'Version', ver)
 DebugFlg = False
 preconv_option = False
-parser = argparse.ArgumentParser(description='Process Forgery & Uttering SIC', prog='forgery.py')
-parser.add_argument("--pc", help="Chcek pre-conviction only", action='store_true')
-parser.add_argument("--version",help="Displays version only", action='version', version='%(prog)s ' + ver)
-parser.add_argument("--debug", help="Debug mode (verbose)", action='store_true')
-parser.add_argument('filename', help="filename to read")
-args = parser.parse_args()
-if args.debug:
-    print("Debug mode")
+
+log = Logger(logfile)
+xls = ExcelFile(program_name, ver)
+
+if xls.debug_flag:
     DebugFlg = True
-if args.pc:
+if xls.test_flag:
+    row_limit = xls.row_limit
+    Testflag = True
+if xls.nolist:
+    no_list = True
+else:
+    no_list = False
+ws = xls.ws
+
+    
+head = ExcelHeader(ws)
+
+
+if xls.preconv_option:
     print("Pre Conv mode")
     preconv_option = True
-org_file = args.filename
-if ".xlsx" not in org_file:
-    if preconv_option:
-        dest_file = org_file + ' Preconv Passed.xlsx'
-    else:
-        dest_file = org_file + ' Passed.xlsx'
-    WorkSheet = org_file
-    org_file = org_file + '.xlsx'
-else:
-    file_parts = org_file.split('.')
-    if DebugFlg:
-        print(file_parts)
-    WorkSheet = file_parts[0]
-    if preconv_option:
-        dest_file = file_parts[0] + ' Preconv Passed.xlxs'
-    else:
-        dest_file = file_parts[0] + ' Passed.xlxs'
-# open workbook
 
-print( 'Loading spreadsheet ', org_file)
-# check if filename exists
-#
-try:     
-    wb = load_workbook(filename=org_file)
-except:
-    print("cannot open file ", org_file)
-    sys.exit()
-if preconv_option:
-    sheet = 'Pre Conv Forgery & Utter'
-else:
-    sheet = 'Post Conv Forgery & Utter'
-ws = wb[sheet]
+
 r = 0
 print("Processing sheet")
 for row in ws.rows:
@@ -464,38 +537,37 @@ for row in ws.rows:
     if r == 1:
         continue # skip header (first row)
     # read row into variables (only useful ones)
-    c_categories = ws.cell(row=r, column=5).value       # column E
-    c_OfficialLists = ws.cell(row=r, column=6).value    # column F
-    c_AdditionalInfo = ws.cell(row=r,column=7).value    # cloumn G
-    c_Reports = ws.cell(row=r,column=8).value           # column H
-    c_Type = ws.cell(row=r, column=10).value            # column J
-    c_status= ws.cell(row=r, column=15).value           # column O
+    c_categories = ws.cell(row=r, column=head.col['Categories']).value       
+    c_OfficialLists = ws.cell(row=r, column=head.col['OfficialLists']).value    
+    c_AdditionalInfo = ws.cell(row=r,column=head.col['AdditionalInfo']).value
+    c_Reports = ws.cell(row=r,column=head.col['Reports']).value     
+    c_Type = ws.cell(row=r, column=head.col['Type']).value
+    # c_Bio = ws.cell(row=r, column=head.col['Bio']).value
+    c_status= ws.cell(row=r, column=head.col['Status']).value
     c_Triage =c_Reports
-    TagStr = [] # resets list of OifficialLists
+    # c_Bio = ws.cell(row=r, column=head.col['Bio']).value
+    c_lists = [] # resets list of OifficialLists
     Extra = False
     ListCheck =False
-    # skip non-crime records
-    # if "CRIME" not in c_categories:
-    #    continue
-
-    # Note: generalisation: one could filter only for review manaully records (c_status == "REVIEW MANUALLY"). e.g.:
-    # if "REVIEW" not in c_status:
-    #       continue
+    
+    
     # Entities are flagged for manual review
     if c_Type == "E":
         # entity, flag for manual review
         print(r, "Entity: Review manually", end='\r')
-        ws.cell(row=r, column=15, value="ENTITY: REVIEW MANNUALLY")
+        ws.cell(row=r, column=head.col['Status'], value="REVIEW MANNUALLY")
+        ws.cell(row=r, column=head.col['Remarks'], value='ENTITY')
+        xls.entities += 1
         continue
+    
     if not c_Reports:
-        ws.cell(row=r, column=15, value='NO REPORT')
+        ws.cell(row=r, column=head.col['Status'], value='NO REPORT')
+        ws.cell(row=r, column=head.col['Remarks'], value='EMMPTY REPORT')
         print(r, "No report found.                         ", end='\r')
-        continue
-    if len(c_Reports) > 750:
-        ws.cell(row=r, column=15, value="TOO LONG REPORT: REVIEW MANUALLY")
+        xls.no_report += 1
         continue
     # check if in additional lists
-    if c_OfficialLists:
+    if c_OfficialLists and no_list == False:
         # extract lists from string
         # split string
         if DebugFlg:
@@ -507,69 +579,100 @@ for row in ws.rows:
             regex = '\['+tag+'\].*?\['
             if DebugFlg: 
                 print (regex)
-            p = re.compile(regex)
-            x = p.search(c_AdditionalInfo)
+            x = RegexSearch(regex, c_AdditionalInfo, r)
             if x:
-                TagStr.append(x.group())
+                c_lists.append(x.group())
                  # we do not need to strip the brackets
                 print(r, "List match ", tag, "found", end="\r")
                 i += 1
-                Extra = True
+                has_list = True
             # end if
     #   # end for
         if DebugFlg:
-            print(TagStr)
+            print(c_lists)
     # end if
     # we now have TagInfo populated
     # len(TagInfo) = mumber of elements (>0) or i , Ectra = True as flag, and i as the 
     # for str in TagInfo:
     #  we check crimes and convictions there as well at the end of the following loop
-    
-    # check for convvicted crimes in Report
-    sic_crime = check_issue(crimes, c_Triage, r)
-    # now we check for Addidional List Tags
-    if sic_crime == True:
-        continue # go to next record
-    if Extra:
-        print(r, "Checking additional in Lists", end="\r")
-        ListCheck = True
-        for x_Triage in TagStr:
-            sic_crime = check_issue(crimes, x_Triage, r)
-            if sic_crime == True:
-                break
-        # end for
-    # end if
-    # if sic_crime was true, it was already written
-    if sic_crime == True:
-        continue
-    if sic_crime == False:
+    if "CRIME" in c_categories:
+        pre_conv = False
+        xls.postconv +=1
+    else:
+        pre_conv = True
+        xls.preconv +=1
         if preconv_option:
+            # do not process crime records. Not implemented
+            pass
+    sic_tag = check_issues(crimes, c_Triage, r, pre_conv, 'RPT')
+    # check for convvicted crimes in Report
+    
+    # now we check for Addidional List Tags
+    if sic_tag == True:
+        continue # go to next record
+    if has_list:
+        print("Checking additional in Lists", end="\r")
+        ListCheck = True
+        for x_Triage in c_lists:
+            Long_Report = False
+            if len(x_Triage) > max_rep_length:
+                Long_Report = True
+                ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+                ws.cell(row=r, column=head.col['Remarks'], value="LONG REPORT [LIST]")
+                print(r, "Long list enry.                         ", end='\r')
+                xls.long_entries += 1
+                xls.review += 1
+                continue # next list entry
+            if sic_tag:
+                break # no more list cheks
+            sic_tag = check_issues(crimes, x_Triage, r, pre_conv, 'LST')
+            if sic_tag == True:
+                break
+        # end for (list)
+    # end if (extra/ lists)
+    # if sic_tag was true, it was already written
+    if sic_tag == True:
+        continue
+    
+    if sic_tag == False:
+        if Long_Report:
+            print (r, "Review manually.                                 ", end='\r')
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            ws.cell(row=r, column=head.col['Remarks'], value="Content to long.")
+            xls.long_entries += 1
+            xls.review += 1
+            continue
+        if pre_conv:
             print(r, "SIC incorrect                         ", end="\r")
-            ws.cell(row=r, column=15, value="INCORRECT")
+            ws.cell(row=r, column=head.col['Status'], value="SIC TAG INCORRECT")
+            ws.cell(row=r, column=head.col['Remarks'], value='Pre Conv: No offense found')
             continue
         print(r, "SIC incorrect                              ", end='\r')
         if pre_conv == False:
-            ws.cell(row=r, column=15, value="INCORRECT")
+            ws.cell(row=r, column=head.col['Status'], value="SIC TAG INCORRECT")
+            ws.cell(row=r, column=head.col['Remarks'], value='Post Conv: No offense found')
+            xls.sic_incorrect += 1
         else:
-            ws.cell(row=r, column=15, value="INCORRECT NO CONV (REVIEW)")
-    if sic_crime == None:
+            ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+            ws.cell(row=r, column=head.col['Ramarks'], value='Post Conv: No conviction found')
+            xls.review += 1
+    if sic_tag == None:
         print(r, "Review manually                            ", end='\r')
-        ws.cell(row=r, column=15, value="REVIEW MANUALLY")
-    
+        ws.cell(row=r, column=head.col['Status'], value="REVIEW MANUALLY")
+        ws.cell(row=r, column=head.col['Remarks'], value="Post Conv: relation between crime and conviction not clear")
+        xls.review += 1
     # end loop through rows
 # write to new workbook
-if preconv_option:
-    dws = wb['Post Conv Forgery & Utter']
-else:
-    dws = wb['Pre Conv Forgery & Utter']
-# delete the other sheet
-wb.remove(dws)
-print('\nWriting and saving results spreadsheet ', dest_file)
+
+print('\nWriting and saving results spreadsheet ', xls.dest_file)
+
 try:
-    wb.save(dest_file)
+    xls.ExcelSave()
 except:
-    input('Cannot write to '+ dest_file + ', Try to close an press enter> ')
-    wb.save(dest_file)
+    input("\nCannot write to file. Try to close it first and press enter > ")
+    print("Saving...")
+    xls.ExcelSave()
 print('Done')
+log.toutput('Done')
 # end program ######################################################################################################
  
