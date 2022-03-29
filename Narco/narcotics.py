@@ -19,6 +19,7 @@ from common import ExcelHeader, RegexSearch
 # first crime found and convicted for, ends check for further crimes, that's why
 # put most frequent ones first 
 ver = '3.0'
+prog_name = 'narcotics'
 crimes = [
     r"racketeering and narcotics",
     r"involved in narcotics business",
@@ -472,7 +473,7 @@ TrueCondition = False
 offence_found = False
 RowLimit = 0
 NoChemCheck = False
-parser = argparse.ArgumentParser(description='Process Narcotics SIC', prog='nacrotics.py')
+parser = argparse.ArgumentParser(description='Process SIC file', prog=prog_name)
 parser.add_argument("--pc", help="Chcek pre-convition only)", action='store_true')
 parser.add_argument("--version",help="Displays version only", action='version', version='%(prog)s ' + ver)
 parser.add_argument("--debug", help="Debug mode", action='store_true')

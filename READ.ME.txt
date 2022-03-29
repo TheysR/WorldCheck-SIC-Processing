@@ -1,7 +1,7 @@
 SIC (Special Interest Categories) tag processing
-
+Version: March 2022
 Guidelines
-1. Use file control_reg.py as template for future programs. THis is the latest program design and 
+1. Use file control_reg.py as template for future programs. This is the latest program design and 
     incorporates logging. Also, variable names and comments are updated.
     Earlier files are listed in order of creation:
         fraud.py
@@ -14,11 +14,17 @@ Guidelines
         disqualified.py
         control_reg.py
     The earlier version are more limited (no argunante parse, many paramaters hard coded, code not optimised and common function not all
-    separated)
-    They could be upgraded for future processing of new files, which is not difficult, using control_reg as tamplate. It only takes a but of time.
+    separated). They could be upgraded for future processing of new files, which is not difficult, using control_reg as template. 
+    It only takes a bit of time.
 2. common.py contains classes and functions common to all programs (file read and write, argument parser, regex wrapper, logger)
+     and must be imported in each individual sic program.
 3. Tested with Python 3.10.1
 4. Needs to have openpyxl installed (pip intall openpyxl)
+5. Narcotics sits in it's own directory and uses common.py in that directory.
+5. PharmList and NarcList Excel files contain triage data that is read by narcotics program
+6. OrgCrimes Excel file contains triage data for organised crime and read by corresponding program.
 
+The original triages and logic are not included here. There were several versions of each and I am not sure which one is the last one.
+T. Radmann
 
 

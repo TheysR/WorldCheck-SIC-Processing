@@ -258,7 +258,8 @@ class Logger:
             return False
         self.stream = f
 
-        print('\n', t, file=f)
+        print('\nStarted',os.path.basename(sys.argv[0]), file=f)
+        print(t, file=f)
         print('----------------------------', file=f)
     
     # write without timestamp    
